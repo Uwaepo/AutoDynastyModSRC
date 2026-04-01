@@ -20,7 +20,7 @@ SIMS4_DOCUMENTS_PATH = DOCUMENTS_PATH / "Electronic Arts" / "The Sims 4"
 #*LOGGING*
 
 # Global enabler for debug logging.
-DEBUG_LOGGING_ENABLED = True
+DEBUG_LOGGING_ENABLED = False
 
 # **MOD**
 
@@ -43,7 +43,7 @@ MINIMUM_REL_NOBLEINHERIT_THRESHOLD = 0
 # Alliances:
 
 # Global enabler for automatic dynasty relation changes.
-AUTO_RELATIONS_ENABLED = True
+AUTO_RELATIONS_ENABLED = False
 
 # TO CREATE AN ALLIANCE, EITHER THE HEAD/AVERAGE CONDITION MUST BE MET
 # Minimum relationship needed with the head of a dynasty to form an alliance. (x% or more)

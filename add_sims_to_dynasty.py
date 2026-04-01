@@ -514,6 +514,8 @@ def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
 
         if target_head_sim_info == None:
             continue
+        elif target_head_sim_info.household.is_player_household == True:
+            continue
 
         target_head_rel = main_head_sim_info.relationship_tracker.get_relationship_score(target_head_sim_info.id)
         target_average_rel = _calculate_average_dynasty_rel(target_dynasty)
