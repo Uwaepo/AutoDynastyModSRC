@@ -223,7 +223,7 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
 # - Must not have a higher noble rank than the noble sim.
 
 # If there are no qualifying successor sims found, the noble rank will be lost unless manually reclaimed by the player.
-def _calculate_noble_successor(noble_sim_info: SimInfo):
+def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
     kingdom_service = services.kingdom_service()
 
     if noble_sim_info.household.is_player_household == True or not kingdom_service.has_noble_career(noble_sim_info) or not noble_sim_info:
@@ -282,8 +282,11 @@ def _calculate_noble_successor(noble_sim_info: SimInfo):
 # Description: Calculates dynasty outcasts based on the relationship with the head.
 # If a dynasty member has a -60% relationship or lower with the head sim, they will be outcasted in the dynasty.
 # If an existing dynasty outcast has a +0% or more with the head sim, their outcast status will be revoked.
-def _calculate_dynasty_black_sheeps(dynasty):
+def _calculate_dynasty_black_sheeps(dynasty) -> None:
     head_sim_info = dynasty.get_head_sim_info()
+
+    if head_sim_info == None:
+        return
 
     if head_sim_info.household.is_player_household == True:
         return
@@ -311,7 +314,7 @@ def _calculate_dynasty_black_sheeps(dynasty):
 # Function Name: _check_child_for_dynasties()
 # Description: Once a new child is born or adopted, this checks their parents for dynasties. If the parent is a head/heir of their dynasty, the child may be added.
 # If both parents are in different dynasties which they are head/heirs of, the child will be added to whichever dynasty has the highest prestige.
-def _check_child_for_dynasties(sim_info):
+def _check_child_for_dynasties(sim_info) -> None:
     if sim_info.household.is_player_household == True:
         return
     
@@ -408,6 +411,128 @@ def _on_sim_marriage(sim_info,spouse_sim_info):
             spouse_dynasty.add_member(sim_info,update_client=True)
 
 
+# Function Name: _calculate_dynasty_relations()
+# Description: Calculates the relations between different dynasties based on relations to the head or dynasty to a whole.
+# To create a new alliance, a head sim must either be friends with the dynasty head or have a positive average relationship with the members. (the alliance must also be within the set level gap)
+# To create a new rivalry, a head sim must have a poor relationship with another head sim or average across all members.
+# To remove an existing alliance, a head sim must not have a positive relationship with another and must have a small or negative average relationship with all members.
+# To remove an existing rivalry, a head sim must have a positive relationship with the other head sim.
+def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
+    if not constants.AUTO_RELATIONS_ENABLED == True:
+        return
+
+    dynasty_service = services.dynasty_service()
+    sim_info_manager = services.sim_info_manager()
+
+    main_head_sim_info = main_dynasty.get_head_sim_info()
+    
+    if main_head_sim_info == None or dynasty_service == None or sim_info_manager == None:
+        return
+
+    if main_head_sim_info.household.is_player_household == True:
+        return
+
+    def _calculate_average_dynasty_rel(target_dynasty: Dynasty):
+        rel_total = 0
+        target_member_sim_ids = target_dynasty.get_members()
+
+        for member_sim_id in target_member_sim_ids:
+            if member_sim_id == None:
+                continue
+            rel_total += main_head_sim_info.relationship_tracker.get_relationship_score(member_sim_id)
+
+        return rel_total / len(target_member_sim_ids)
+
+    main_dynasty_prestige_level = main_dynasty.get_total_prestige_stat().rank_level
+
+    debug_log(f"*DYNASTY RELATIONS CHECK*")
+    debug_log(f"Dynasty name: {main_dynasty.name}")
+    debug_log(f"Dynasty Prestige Level: {main_dynasty_prestige_level}")
+
+    dynasty_allies = list(main_dynasty._alliances)
+
+    for ally_dynasty_id in dynasty_allies:
+        ally_dynasty = dynasty_service.get_dynasty(ally_dynasty_id)
+
+        if ally_dynasty == None or ally_dynasty == main_dynasty:
+            continue
+
+        ally_head_sim_info = ally_dynasty.get_head_sim_info()
+
+        if ally_head_sim_info == None:
+            continue
+        elif ally_head_sim_info.household.is_player_household == True:
+            continue
+
+        if main_dynasty.is_rival(ally_dynasty):
+            dynasty_service.end_rivalry(main_dynasty,ally_dynasty)
+
+        ally_head_rel = main_head_sim_info.relationship_tracker.get_relationship_score(ally_head_sim_info.id)
+        ally_average_rel = _calculate_average_dynasty_rel(ally_dynasty)
+
+        debug_log(f"Ally Dynasty name: {ally_dynasty.name}")
+        debug_log(f"Ally Head Relationship: {ally_head_rel}")
+        debug_log(f"Ally Average Relationship: {ally_average_rel}")
+
+        if (ally_head_rel <= constants.MAXIMUM_HEAD_REL_REMOVE_ALLY and ally_average_rel <= constants.MAXIMUM_AVERAGE_REL_REMOVE_ALLY):
+            debug_log(f"Removing {ally_dynasty.name} as {main_dynasty.name} ally.")
+            dynasty_service.end_alliance(main_dynasty,ally_dynasty)
+
+    dynasty_rivals = list(main_dynasty._rivalries)
+
+    for rival_dynasty_id in dynasty_rivals:
+        rival_dynasty = dynasty_service.get_dynasty(rival_dynasty_id)
+
+        if rival_dynasty == None or rival_dynasty == main_dynasty:
+            continue
+
+        rival_head_sim_info = rival_dynasty.get_head_sim_info()
+
+        if rival_head_sim_info == None:
+            continue
+        elif rival_head_sim_info.household.is_player_household == True:
+            continue
+        
+        rival_head_rel = main_head_sim_info.relationship_tracker.get_relationship_score(rival_head_sim_info.id)
+
+        debug_log(f"Rival Dynasty name: {rival_dynasty.name}")
+        debug_log(f"Rival Head Relationship: {rival_head_rel}")
+        
+        if rival_head_rel >= constants.MINIMUM_HEAD_REL_REMOVE_RIVAL:
+            debug_log(f"Removing {rival_dynasty.name} as {main_dynasty.name} rival.")
+            dynasty_service.end_rivalry(main_dynasty,rival_dynasty)
+
+    all_dynasties = dynasty_service.get_all_dynasties()
+
+    for target_dynasty in all_dynasties.values():
+        if target_dynasty == None:
+            continue
+        elif target_dynasty == main_dynasty or main_dynasty.is_ally(target_dynasty) or main_dynasty.is_rival(target_dynasty):
+            continue
+
+        target_head_sim_info = target_dynasty.get_head_sim_info()
+
+        if target_head_sim_info == None:
+            continue
+
+        target_head_rel = main_head_sim_info.relationship_tracker.get_relationship_score(target_head_sim_info.id)
+        target_average_rel = _calculate_average_dynasty_rel(target_dynasty)
+
+        target_dynasty_prestige_level = main_dynasty.get_total_prestige_stat().rank_level
+
+        debug_log(f"Target Dynasty name: {target_dynasty.name}")
+        debug_log(f"Target Head Relationship: {target_head_rel}")
+        debug_log(f"Target Average Relationship: {target_average_rel}")
+        debug_log(f"Target Prestige Level: {target_dynasty_prestige_level}")
+
+        if (target_head_rel >= constants.MINIMUM_HEAD_REL_NEW_ALLY or target_average_rel >= constants.MINIMUM_AVERAGE_REL_NEW_ALLY) and target_dynasty_prestige_level in range(main_dynasty_prestige_level - constants.MAXIMUM_LOWER_LEVEL_GAP_ALLY, main_dynasty_prestige_level + constants.MAXIMUM_LOWER_LEVEL_GAP_ALLY):
+            debug_log(f"Adding {target_dynasty.name} as {main_dynasty.name} ally.")
+            dynasty_service.add_alliance(main_dynasty,target_dynasty)
+        elif (target_head_rel <= constants.MAXIMUM_HEAD_REL_NEW_RIVAL or target_average_rel <= constants.MAXIMUM_AVERAGE_REL_NEW_RIVAL):
+            debug_log(f"Adding {target_dynasty.name} as {main_dynasty.name} rival.")
+            dynasty_service.add_rivalry(main_dynasty,target_dynasty)
+
+
 # *Hooks*
 
 # Runs when the parent relationship is set for a sim. Presumably when a child is born or adopted.
@@ -445,10 +570,14 @@ def _hook_relationship_tracker_add_relationship_bit(original, self, target_sim_i
                 _on_sim_marriage(sim_info,target_sim_info)
 
             sim_a_dynasty = _get_sim_dynasty(sim_info)
+            sim_b_dynasty = _get_sim_dynasty(target_sim_info)
 
-            if (sim_a_dynasty == _get_sim_dynasty(target_sim_info)) and sim_a_dynasty != None:
+            if (sim_a_dynasty == sim_b_dynasty) and sim_a_dynasty != None:
                 _calculate_dynasty_heir(sim_a_dynasty)
                 _calculate_dynasty_black_sheeps(sim_a_dynasty)
+            elif (sim_a_dynasty != None and sim_b_dynasty != None and sim_a_dynasty != sim_b_dynasty):
+                _calculate_dynasty_relations(sim_a_dynasty)
+                _calculate_dynasty_relations(sim_b_dynasty)
 
             sim_a_is_noble = kingdom_service.has_noble_career(sim_info)
             sim_b_is_noble = kingdom_service.has_noble_career(target_sim_info)
@@ -505,6 +634,7 @@ def _hook_zone_on_all_sims_spawned(original, self, *args, **kwargs):
         for dynasty in all_dynasties.values():
             _calculate_dynasty_heir(dynasty)
             _calculate_dynasty_black_sheeps(dynasty)
+            _calculate_dynasty_relations(dynasty)
     except:
         debug_log("EXCEPTION in Zone.on_all_sims_spawned hook:\n" + traceback.format_exc())
     return result
