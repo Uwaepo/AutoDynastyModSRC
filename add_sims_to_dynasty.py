@@ -46,7 +46,7 @@ def _get_sim_dynasty(sim_info: SimInfo) -> Dynasty:
 
 # Function Name: _is_dynasty_played()
 # Description: Checks if a dynasty has any played sim members.
-bool _is_dynasty_played(dynasty: Dynasty) -> bool:
+def _is_dynasty_played(dynasty: Dynasty) -> bool:
     if not dynasty:
         return False
     try:
