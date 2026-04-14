@@ -182,7 +182,7 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
     if head_sim_info is None:
         return
 
-    if _is_dynasty_played(dynasty):
+    if _is_dynasty_played(dynasty)  == True:
         return
 
     # Checking if old heir qualifies to be heir still.
@@ -323,7 +323,7 @@ def _calculate_dynasty_black_sheeps(dynasty) -> None:
     if head_sim_info is None:
         return
 
-    if _is_dynasty_played(dynasty):
+    if _is_dynasty_played(dynasty)  == True:
         return
 
     member_sim_ids = dynasty.get_members()
@@ -387,7 +387,7 @@ def _check_child_for_dynasties(sim_info) -> None:
 
         debug_log(f"Parent In Dynasty: {parent_dynasty is not None}")
         
-        if parent_dynasty is None or _is_dynasty_played(parent_dynasty):
+        if parent_dynasty is None or _is_dynasty_played(parent_dynasty)  == True:
             continue
 
         debug_log(f"Parent Dynasty Name: {parent_dynasty.name}")
@@ -418,7 +418,7 @@ def _on_sim_marriage(sim_info,spouse_sim_info):
     sim_dynasty = _get_sim_dynasty(sim_info)
     spouse_dynasty = _get_sim_dynasty(spouse_sim_info)
 
-    if _is_dynasty_played(sim_dynasty) or _is_dynasty_played(spouse_dynasty):
+    if _is_dynasty_played(sim_dynasty) == True or _is_dynasty_played(spouse_dynasty)  == True:
         return
         
     sim_is_headheir = False
@@ -470,7 +470,7 @@ def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
     if main_head_sim_info is None or dynasty_service is None or sim_info_manager is None:
         return
 
-    if _is_dynasty_played(main_dynasty):
+    if _is_dynasty_played(main_dynasty) == True:
         return
 
     def _calculate_average_dynasty_rel(target_dynasty: Dynasty):
@@ -500,7 +500,7 @@ def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
 
         ally_head_sim_info = ally_dynasty.get_head_sim_info()
 
-        if ally_head_sim_info is None or _is_dynasty_played(ally_dynasty):
+        if ally_head_sim_info is None or _is_dynasty_played(ally_dynasty)  == True:
             continue
 
         if main_dynasty.is_rival(ally_dynasty):
@@ -527,7 +527,7 @@ def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
 
         rival_head_sim_info = rival_dynasty.get_head_sim_info()
 
-        if rival_head_sim_info is None or _is_dynasty_played(rival_dynasty):
+        if rival_head_sim_info is None or _is_dynasty_played(rival_dynasty)  == True:
             continue
         
         rival_head_rel = main_head_sim_info.relationship_tracker.get_relationship_score(rival_head_sim_info.id)
@@ -544,7 +544,7 @@ def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
     for target_dynasty in all_dynasties.values():
         if target_dynasty is None:
             continue
-        elif target_dynasty == main_dynasty or main_dynasty.is_ally(target_dynasty) or main_dynasty.is_rival(target_dynasty) or _is_dynasty_played(target_dynasty):
+        elif target_dynasty == main_dynasty or main_dynasty.is_ally(target_dynasty) or main_dynasty.is_rival(target_dynasty) or _is_dynasty_played(target_dynasty)  == True:
             continue
 
         target_head_sim_info = target_dynasty.get_head_sim_info()
@@ -636,7 +636,7 @@ def _hook_dynasty_add_member(original, self, *args, **kwargs):
     debug_log("HOOK: Dynasty.add_member fired")
     result = original(self, *args, **kwargs)
 
-    if _is_dynasty_played(self):
+    if _is_dynasty_played(self)  == True:
         return result
 
     try:
@@ -655,7 +655,7 @@ def _hook_dynasty_remove_member(original, self, target_sim_id, *args, **kwargs):
     
     result = original(self, target_sim_id, *args, **kwargs)
     
-    if _is_dynasty_played(self):
+    if _is_dynasty_played(self)  == True:
         return result
 
     try:
@@ -673,7 +673,7 @@ def _hook_dynasty_set_head(original, self, *args, **kwargs):
     debug_log("HOOK: Dynasty.set_head fired")
     result = original(self, *args, **kwargs)
 
-    if _is_dynasty_played(self):
+    if _is_dynasty_played(self)  == True:
         return result
     
     try:
@@ -685,8 +685,8 @@ def _hook_dynasty_set_head(original, self, *args, **kwargs):
         head_children_sim_infos = _order_relative_list(list(head_sim_info.genealogy.get_children_sim_ids_gen()))
 
         for child_sim_info in head_children_sim_infos:
-            if _get_sim_dynasty(child_sim_info) is None:
-                add_member(child_sim_info,update_client=True)
+            if _get_sim_dynasty(child_sim_info) is None and child_sim_info is not None:
+                self.add_member(child_sim_info,update_client=True)
 
         _calculate_dynasty_heir(self)
         _calculate_dynasty_black_sheeps(self)
@@ -703,6 +703,17 @@ def _hook_dynastyservice_on_all_households_and_sim_infos_loaded(original, self, 
         all_dynasties = services.dynasty_service().get_all_dynasties()
 
         for dynasty in all_dynasties.values():
+            head_sim_info = dynasty.get_head_sim_info()
+
+            if head_sim_info is None:
+                continue
+
+            head_children_sim_infos = _order_relative_list(list(head_sim_info.genealogy.get_children_sim_ids_gen()))
+
+            for child_sim_info in head_children_sim_infos:
+                if _get_sim_dynasty(child_sim_info) is None and child_sim_info is not None:
+                    dynasty.add_member(child_sim_info,update_client=True)
+
             _calculate_dynasty_heir(dynasty)
             _calculate_dynasty_black_sheeps(dynasty)
             _calculate_dynasty_relations(dynasty)
