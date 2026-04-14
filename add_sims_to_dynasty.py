@@ -48,7 +48,7 @@ def _get_sim_dynasty(sim_info: SimInfo) -> Dynasty:
 # Description: Checks if a dynasty has any played sim members.
 def _is_dynasty_played(dynasty: Dynasty) -> bool:
     if not dynasty:
-        return False
+        return None
     try:
         sim_info_manager = services.sim_info_manager()
 
@@ -66,7 +66,7 @@ def _is_dynasty_played(dynasty: Dynasty) -> bool:
         return False
     except:
         debug_log("EXCEPTION when checking if dynasty played:\n" + traceback.format_exc())
-        return False
+        return None
 
 
 # Function Name: _are_sims_related_or_married()
@@ -635,6 +635,10 @@ def _hook_relationship_tracker_add_relationship_bit(original, self, target_sim_i
 def _hook_dynasty_add_member(original, self, *args, **kwargs):
     debug_log("HOOK: Dynasty.add_member fired")
     result = original(self, *args, **kwargs)
+
+    if _is_dynasty_played(self):
+        return result
+
     try:
         _calculate_dynasty_heir(self)
         _calculate_dynasty_black_sheeps(self)
@@ -651,6 +655,9 @@ def _hook_dynasty_remove_member(original, self, target_sim_id, *args, **kwargs):
     
     result = original(self, target_sim_id, *args, **kwargs)
     
+    if _is_dynasty_played(self):
+        return result
+
     try:
         _calculate_dynasty_heir(self)
         _calculate_dynasty_black_sheeps(self)
@@ -659,10 +666,38 @@ def _hook_dynasty_remove_member(original, self, target_sim_id, *args, **kwargs):
     return result
 
 
+# Runs when a new head sim is set.
+# Used to add existing children not yet part of the dynasty.
+@inject_to(Dynasty, "set_head")
+def _hook_dynasty_set_head(original, self, *args, **kwargs):
+    debug_log("HOOK: Dynasty.set_head fired")
+    result = original(self, *args, **kwargs)
+
+    if _is_dynasty_played(self):
+        return result
+    
+    try:
+        head_sim_info = self.get_head_sim_info()
+
+        if head_sim_info is None:
+            return result
+
+        head_children_sim_infos = _order_relative_list(list(head_sim_info.genealogy.get_children_sim_ids_gen()))
+
+        for child_sim_info in head_children_sim_infos:
+            if _get_sim_dynasty(child_sim_info) is None:
+                add_member(child_sim_info,update_client=True)
+
+        _calculate_dynasty_heir(self)
+        _calculate_dynasty_black_sheeps(self)
+    except:
+        debug_log("EXCEPTION in Dynasty.set_head hook:\n" + traceback.format_exc())
+    return result
+
 # Runs when all dynasties and members are first loaded
 @inject_to(DynastyService, "on_all_households_and_sim_infos_loaded")
-def _hook_zone_on_all_sims_spawned(original, self, *args, **kwargs):
-    debug_log("HOOK: Zone.on_all_sims_spawned fired")
+def _hook_dynastyservice_on_all_households_and_sim_infos_loaded(original, self, *args, **kwargs):
+    debug_log("HOOK: DynastyService._hook_dynastyservice_on_all_households_and_sim_infos_loaded fired")
     result = original(self, *args, **kwargs)
     try:
         all_dynasties = services.dynasty_service().get_all_dynasties()
