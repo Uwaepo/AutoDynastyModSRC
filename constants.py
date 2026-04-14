@@ -20,7 +20,7 @@ SIMS4_DOCUMENTS_PATH = DOCUMENTS_PATH / "Electronic Arts" / "The Sims 4"
 #*LOGGING*
 
 # Global enabler for debug logging.
-DEBUG_LOGGING_ENABLED = False
+DEBUG_LOGGING_ENABLED = True
 
 # **MOD**
 

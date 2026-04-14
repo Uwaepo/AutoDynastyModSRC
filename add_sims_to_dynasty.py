@@ -9,6 +9,7 @@ from careers.career_enums import CareerCategory
 from careers.career_tracker import CareerTracker
 
 from dynasty.dynasty import Dynasty
+from dynasty.dynasty_service import DynastyService
 from dynasty.dynasty_tunings import DynastyTunables
 
 from interactions.utils.death import DeathTracker
@@ -43,16 +44,43 @@ def _get_sim_dynasty(sim_info: SimInfo) -> Dynasty:
         return None
 
 
+# Function Name: _is_dynasty_played()
+# Description: Checks if a dynasty has any played sim members.
+bool _is_dynasty_played(dynasty: Dynasty) -> bool:
+    if not dynasty:
+        return False
+    try:
+        sim_info_manager = services.sim_info_manager()
+
+        member_sim_ids = dynasty.get_members()
+
+        for member_sim_id in member_sim_ids:
+            member_sim_info = sim_info_manager.get(member_sim_id)
+
+            if member_sim_info is None:
+                continue
+
+            if member_sim_info.household.is_player_household == True:
+                return True
+        
+        return False
+    except:
+        debug_log("EXCEPTION when checking if dynasty played:\n" + traceback.format_exc())
+        return False
+
+
 # Function Name: _are_sims_related_or_married()
 # Description: Checks if sim B is related (by 2 layers) to sim A or married.
 def _are_sims_related_or_married(sim_info_a: SimInfo,sim_info_b: SimInfo) -> bool:
     return services.family_tree_service().are_sims_related(sim_info_a.id, sim_info_b.id, max_search_depth=2) or sim_info_a.spouse_sim_id == sim_info_b.id
 
-
 # Function Name: _set_sim_as_noble_successor()
 # Description: Sets a sim as another sim's noble successor if the latter is in the noble career.
 def _set_sim_as_noble_successor(noble_sim_info: SimInfo,inheriting_sim_info: SimInfo) -> None:
     kingdom_service = services.kingdom_service()
+
+    if noble_sim_info is None or inheriting_sim_info is None:
+        return
 
     if kingdom_service.has_noble_career(noble_sim_info) and noble_sim_info != inheriting_sim_info:
         debug_log(f"Setting {inheriting_sim_info.first_name} {inheriting_sim_info.last_name} as {noble_sim_info.first_name} {noble_sim_info.last_name}'s noble successor.")
@@ -64,7 +92,7 @@ def _set_sim_as_noble_successor(noble_sim_info: SimInfo,inheriting_sim_info: Sim
 def _remove_fulltime_careers(sim_info: SimInfo) -> bool:
     career_tracker = services.sim_info_manager().get(sim_info.id).career_tracker
 
-    if career_tracker == None:
+    if career_tracker is None:
         return False
 
     career_uids_to_remove = []
@@ -116,11 +144,14 @@ def _order_relative_list(relative_sim_ids) -> list:
 def should_be_black_sheep(target_sim_info: SimInfo) -> bool:
     dynasty = _get_sim_dynasty(target_sim_info)
 
-    if dynasty == None:
+    if dynasty is None:
         return False
 
     head_sim_info = dynasty.get_head_sim_info()
     
+    if head_sim_info is None:
+        return False
+
     headmember_rel = head_sim_info.relationship_tracker.get_relationship_score(target_sim_info.id)
 
     if headmember_rel <= constants.MAXIMUM_REL_BLACKSHEEP_THRESHOLD:
@@ -148,11 +179,14 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
     head_sim_info = dynasty.get_head_sim_info()
     old_heir_sim_info = dynasty.get_heir_sim_info()
 
-    if head_sim_info.household.is_player_household == True:
+    if head_sim_info is None:
+        return
+
+    if _is_dynasty_played(dynasty):
         return
 
     # Checking if old heir qualifies to be heir still.
-    if old_heir_sim_info != None:
+    if old_heir_sim_info is not None:
         headheir_rel = head_sim_info.relationship_tracker.get_relationship_score(old_heir_sim_info.id)
         
         if headheir_rel >= constants.MINIMUM_REL_HEIR_THRESHOLD: 
@@ -162,7 +196,7 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
 
     # Checks if a sim qualifies to be heir by their SimInfo.
     def _can_be_heir(target_sim_info: SimInfo) -> bool:
-        if target_sim_info == None:
+        if target_sim_info is None:
             return False
 
         is_black_sheep = target_sim_info.has_trait(DynastyTunables.BLACK_SHEEP_TRAIT)
@@ -181,16 +215,16 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
             chosen_heir_sim_info = child_sim_info
 
     # Checking spouse.
-    if chosen_heir_sim_info == None:
+    if chosen_heir_sim_info is None:
         head_spouse_sim_id = head_sim_info.spouse_sim_id
-        if head_spouse_sim_id != None:
+        if head_spouse_sim_id is not None:
             head_spouse_sim_info = services.sim_info_manager().get(head_spouse_sim_id)
 
             if _can_be_heir(head_spouse_sim_info):
                 chosen_heir_sim_info = head_spouse_sim_info
 
     # Checking siblings.
-    if chosen_heir_sim_info == None:
+    if chosen_heir_sim_info is None:
         head_siblings_sim_infos = _order_relative_list(list(head_sim_info.genealogy.get_siblings_sim_ids_gen()))
 
         for sibling_sim_info in head_siblings_sim_infos:
@@ -198,7 +232,7 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
                 chosen_heir_sim_info = sibling_sim_info
 
     # Checking parents.
-    if chosen_heir_sim_info == None:
+    if chosen_heir_sim_info is None:
         head_parents_sim_infos = _order_relative_list(list(head_sim_info.genealogy.get_parent_sim_ids_gen()))
 
         for parent_sim_info in head_parents_sim_infos:
@@ -206,8 +240,9 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
                 chosen_heir_sim_info = parent_sim_info
 
     # Setting as heir if a qualifying sim is found.
-    if chosen_heir_sim_info != None:
+    if chosen_heir_sim_info is not None:
         dynasty.set_heir(chosen_heir_sim_info.id,update_client=True)
+
 
 # Function Name: _calculate_noble_successor()
 # Description: Calculates the most suitable sim to become a noble sim's successor.
@@ -226,14 +261,14 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
 def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
     kingdom_service = services.kingdom_service()
 
-    if noble_sim_info.household.is_player_household == True or not kingdom_service.has_noble_career(noble_sim_info) or not noble_sim_info:
+    if noble_sim_info.household.is_player_household == True or not kingdom_service.has_noble_career(noble_sim_info) or kingdom_service.get_sim_neighborhood_id(noble_sim_info) is None:
         return
 
     noble_successor_sim_info = None
     
     # Checks if a sim qualifies to be successor by their SimInfo.
     def _can_be_successor(target_sim_info: SimInfo) -> bool:
-        if target_sim_info == None:
+        if target_sim_info is None:
             return False
 
         lower_noble_rank = True
@@ -250,31 +285,31 @@ def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
     noble_children_sim_infos = _order_relative_list(list(noble_sim_info.genealogy.get_children_sim_ids_gen()))
 
     # Checking dynasty heirs.                                
-    if noble_dynasty != None:
+    if noble_dynasty is not None:
         if noble_dynasty.get_head_sim_info() == noble_sim_info:
             heir_sim_info = noble_dynasty.get_heir_sim_info()
-            if heir_sim_info != None:
+            if heir_sim_info is not None:
                 if (heir_sim_info in noble_children_sim_infos or heir_sim_info.id == noble_sim_info.spouse_sim_id) and _can_be_successor(heir_sim_info):
                     noble_successor_sim_info = heir_sim_info
 
     # Checking children.
-    if noble_successor_sim_info == None:                                  
+    if noble_successor_sim_info is None:                                  
         for child_sim_info in noble_children_sim_infos:
             if _can_be_successor(child_sim_info):
                 noble_successor_sim_info = child_sim_info
 
     # Checking spouses.
-    if noble_successor_sim_info == None:
+    if noble_successor_sim_info is None:
         noble_spouse_sim_id = noble_sim_info.spouse_sim_id
         
-        if noble_spouse_sim_id != None:
+        if noble_spouse_sim_id is not None:
             noble_spouse_sim_info = services.sim_info_manager().get(noble_spouse_sim_id)
 
             if _can_be_successor(noble_spouse_sim_info):
                 noble_successor_sim_info = noble_spouse_sim_info
 
     # Setting as successor if a qualifying sim is found.
-    if noble_successor_sim_info != None:
+    if noble_successor_sim_info is not None:
         _set_sim_as_noble_successor(noble_sim_info,noble_successor_sim_info)
 
         
@@ -285,17 +320,17 @@ def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
 def _calculate_dynasty_black_sheeps(dynasty) -> None:
     head_sim_info = dynasty.get_head_sim_info()
 
-    if head_sim_info == None:
+    if head_sim_info is None:
         return
 
-    if head_sim_info.household.is_player_household == True:
+    if _is_dynasty_played(dynasty):
         return
 
     member_sim_ids = dynasty.get_members()
 
     for member_sim_id in member_sim_ids:
         member_sim_info = services.sim_info_manager().get(member_sim_id)
-        if member_sim_info == None:
+        if member_sim_info is None:
             continue
         
         if member_sim_id == dynasty.get_head_sim_id() or member_sim_id == dynasty.get_heir_sim_id():
@@ -315,10 +350,13 @@ def _calculate_dynasty_black_sheeps(dynasty) -> None:
 # Description: Once a new child is born or adopted, this checks their parents for dynasties. If the parent is a head/heir of their dynasty, the child may be added.
 # If both parents are in different dynasties which they are head/heirs of, the child will be added to whichever dynasty has the highest prestige.
 def _check_child_for_dynasties(sim_info) -> None:
+    if sim_info is None:
+        return
+    
     if sim_info.household.is_player_household == True:
         return
     
-    sim_is_in_dynasty = _get_sim_dynasty(sim_info) != None
+    sim_is_in_dynasty = _get_sim_dynasty(sim_info) is not None
     
     debug_log("**AUTODYNASTYMOD SIM CHECK**")
     debug_log(f"Sim Name: {sim_info.first_name} {sim_info.last_name}")
@@ -347,9 +385,9 @@ def _check_child_for_dynasties(sim_info) -> None:
 
         parent_dynasty = _get_sim_dynasty(parent_sim_info)
 
-        debug_log(f"Parent In Dynasty: {parent_dynasty != None}")
+        debug_log(f"Parent In Dynasty: {parent_dynasty is not None}")
         
-        if parent_dynasty == None:
+        if parent_dynasty is None or _is_dynasty_played(parent_dynasty):
             continue
 
         debug_log(f"Parent Dynasty Name: {parent_dynasty.name}")
@@ -358,13 +396,13 @@ def _check_child_for_dynasties(sim_info) -> None:
         if parent_sim_id != parent_dynasty.get_head_sim_id() and parent_sim_id != parent_dynasty.get_heir_sim_id():
             continue
         
-        if highest_dynasty == None:
+        if highest_dynasty is None:
             highest_dynasty = parent_dynasty
-        elif highest_dynasty != None and parent_dynasty != None:
+        elif highest_dynasty is not None and parent_dynasty is not None:
             if parent_dynasty.get_prestige_value() > highest_dynasty.get_prestige_value():
                 highest_dynasty = parent_dynasty
 
-    if highest_dynasty != None:
+    if highest_dynasty is not None:
         debug_log(f"Adding {sim_info.first_name} {sim_info.last_name} to {highest_dynasty.name} Dynasty.")
         highest_dynasty.add_member(sim_info,update_client=True)
 
@@ -380,6 +418,9 @@ def _on_sim_marriage(sim_info,spouse_sim_info):
     sim_dynasty = _get_sim_dynasty(sim_info)
     spouse_dynasty = _get_sim_dynasty(spouse_sim_info)
 
+    if _is_dynasty_played(sim_dynasty) or _is_dynasty_played(spouse_dynasty):
+        return
+        
     sim_is_headheir = False
     spouse_is_headheir = False 
 
@@ -387,10 +428,10 @@ def _on_sim_marriage(sim_info,spouse_sim_info):
     debug_log(f"Sim Name: {sim_info.first_name} {sim_info.last_name}")
     debug_log(f"Spouse Name: {spouse_sim_info.first_name} {spouse_sim_info.last_name}")
 
-    if sim_dynasty != None:
+    if sim_dynasty is not None:
         sim_is_headheir = sim_info == sim_dynasty.get_head_sim_info() or sim_info == sim_dynasty.get_heir_sim_info()
 
-    if spouse_dynasty != None:
+    if spouse_dynasty is not None:
         spouse_is_headheir = spouse_sim_info == spouse_dynasty.get_head_sim_info() or spouse_sim_info == spouse_dynasty.get_heir_sim_info()
 
     debug_log(f"Sim Is Dynasty Head/Heir: {sim_is_headheir}")
@@ -426,10 +467,10 @@ def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
 
     main_head_sim_info = main_dynasty.get_head_sim_info()
     
-    if main_head_sim_info == None or dynasty_service == None or sim_info_manager == None:
+    if main_head_sim_info is None or dynasty_service is None or sim_info_manager is None:
         return
 
-    if main_head_sim_info.household.is_player_household == True:
+    if _is_dynasty_played(main_dynasty):
         return
 
     def _calculate_average_dynasty_rel(target_dynasty: Dynasty):
@@ -437,7 +478,7 @@ def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
         target_member_sim_ids = target_dynasty.get_members()
 
         for member_sim_id in target_member_sim_ids:
-            if member_sim_id == None:
+            if member_sim_id is None:
                 continue
             rel_total += main_head_sim_info.relationship_tracker.get_relationship_score(member_sim_id)
 
@@ -454,14 +495,12 @@ def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
     for ally_dynasty_id in dynasty_allies:
         ally_dynasty = dynasty_service.get_dynasty(ally_dynasty_id)
 
-        if ally_dynasty == None or ally_dynasty == main_dynasty:
+        if ally_dynasty is None or ally_dynasty == main_dynasty:
             continue
 
         ally_head_sim_info = ally_dynasty.get_head_sim_info()
 
-        if ally_head_sim_info == None:
-            continue
-        elif ally_head_sim_info.household.is_player_household == True:
+        if ally_head_sim_info is None or _is_dynasty_played(ally_dynasty):
             continue
 
         if main_dynasty.is_rival(ally_dynasty):
@@ -483,14 +522,12 @@ def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
     for rival_dynasty_id in dynasty_rivals:
         rival_dynasty = dynasty_service.get_dynasty(rival_dynasty_id)
 
-        if rival_dynasty == None or rival_dynasty == main_dynasty:
+        if rival_dynasty is None or rival_dynasty == main_dynasty:
             continue
 
         rival_head_sim_info = rival_dynasty.get_head_sim_info()
 
-        if rival_head_sim_info == None:
-            continue
-        elif rival_head_sim_info.household.is_player_household == True:
+        if rival_head_sim_info is None or _is_dynasty_played(rival_dynasty):
             continue
         
         rival_head_rel = main_head_sim_info.relationship_tracker.get_relationship_score(rival_head_sim_info.id)
@@ -505,16 +542,14 @@ def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
     all_dynasties = dynasty_service.get_all_dynasties()
 
     for target_dynasty in all_dynasties.values():
-        if target_dynasty == None:
+        if target_dynasty is None:
             continue
-        elif target_dynasty == main_dynasty or main_dynasty.is_ally(target_dynasty) or main_dynasty.is_rival(target_dynasty):
+        elif target_dynasty == main_dynasty or main_dynasty.is_ally(target_dynasty) or main_dynasty.is_rival(target_dynasty) or _is_dynasty_played(target_dynasty):
             continue
 
         target_head_sim_info = target_dynasty.get_head_sim_info()
 
-        if target_head_sim_info == None:
-            continue
-        elif target_head_sim_info.household.is_player_household == True:
+        if target_head_sim_info is None:
             continue
 
         target_head_rel = main_head_sim_info.relationship_tracker.get_relationship_score(target_head_sim_info.id)
@@ -567,17 +602,17 @@ def _hook_relationship_tracker_add_relationship_bit(original, self, target_sim_i
         sim_info = self._sim_info
         target_sim_info = services.sim_info_manager().get(target_sim_id)
         
-        if sim_info != None and target_sim_info != None:
+        if sim_info is not None and target_sim_info is not None:
             if "romantic-married" in str(bit).lower():
                 _on_sim_marriage(sim_info,target_sim_info)
 
             sim_a_dynasty = _get_sim_dynasty(sim_info)
             sim_b_dynasty = _get_sim_dynasty(target_sim_info)
 
-            if (sim_a_dynasty == sim_b_dynasty) and sim_a_dynasty != None:
+            if (sim_a_dynasty == sim_b_dynasty) and sim_a_dynasty is not None:
                 _calculate_dynasty_heir(sim_a_dynasty)
                 _calculate_dynasty_black_sheeps(sim_a_dynasty)
-            elif (sim_a_dynasty != None and sim_b_dynasty != None and sim_a_dynasty != sim_b_dynasty):
+            elif (sim_a_dynasty is not None and sim_b_dynasty is not None and sim_a_dynasty != sim_b_dynasty):
                 _calculate_dynasty_relations(sim_a_dynasty)
                 _calculate_dynasty_relations(sim_b_dynasty)
 
@@ -624,9 +659,8 @@ def _hook_dynasty_remove_member(original, self, target_sim_id, *args, **kwargs):
     return result
 
 
-# Runs when a zone finishes loading all sims.
-# Probably redundant, but allows for existing dynasties to be updated after each zone load.
-@inject_to(Zone, "on_all_sims_spawned")
+# Runs when all dynasties and members are first loaded
+@inject_to(DynastyService, "on_all_households_and_sim_infos_loaded")
 def _hook_zone_on_all_sims_spawned(original, self, *args, **kwargs):
     debug_log("HOOK: Zone.on_all_sims_spawned fired")
     result = original(self, *args, **kwargs)
@@ -638,7 +672,7 @@ def _hook_zone_on_all_sims_spawned(original, self, *args, **kwargs):
             _calculate_dynasty_black_sheeps(dynasty)
             _calculate_dynasty_relations(dynasty)
     except:
-        debug_log("EXCEPTION in Zone.on_all_sims_spawned hook:\n" + traceback.format_exc())
+        debug_log("EXCEPTION in DynastyService.on_all_households_and_sim_infos_loaded hook:\n" + traceback.format_exc())
     return result
 
 
@@ -650,24 +684,25 @@ def _hook_zone_on_all_sims_spawned(original, self, *args, **kwargs):
 def _hook_kingdomservice_process_inhertiing_sim(original, self, neighborhood_id, noble_sim_info, inheriting_sim_id, *args, **kwargs):
     debug_log("HOOK: KingdomService.process_inheriting_sim fired")
     try:
-        debug_log("**NOBLE DEATH**")
-        debug_log(f"Noble Sim Name: {noble_sim_info.first_name} {noble_sim_info.last_name}")
-        
-        inheriting_sim_info = services.sim_info_manager().get(inheriting_sim_id)
-
-        if inheriting_sim_info != None:
-            debug_log(f"Inheriting Sim Name: {inheriting_sim_info.first_name} {inheriting_sim_info.last_name}")
+        if neighborhood_id is not None:
+            debug_log("**NOBLE DEATH**")
+            debug_log(f"Noble Sim Name: {noble_sim_info.first_name} {noble_sim_info.last_name}")
             
-            if noble_sim_info.household.is_player_household != True and inheriting_sim_info.household.is_player_household != True:
-                debug_log(f"Inheriting Sim Lives in Kingdom: {self.get_sim_neighborhood_id(inheriting_sim_info) == neighborhood_id}")
-                
-                if self.get_sim_neighborhood_id(inheriting_sim_info) == neighborhood_id and not inheriting_sim_info.is_dead and inheriting_sim_info.age >= Age.TEEN:
-                    if self.has_noble_career(inheriting_sim_info) == False:
-                        debug_log(f"Remove {inheriting_sim_info.first_name}'s Adult Careers")
+            inheriting_sim_info = services.sim_info_manager().get(inheriting_sim_id)
 
-                        if _remove_fulltime_careers(inheriting_sim_info):
-                            debug_log(f"Giving {inheriting_sim_info.first_name} Noble Career")
-                            _add_noble_career(inheriting_sim_info)
+            if inheriting_sim_info is not None:
+                debug_log(f"Inheriting Sim Name: {inheriting_sim_info.first_name} {inheriting_sim_info.last_name}")
+                
+                if noble_sim_info.household.is_player_household != True and inheriting_sim_info.household.is_player_household != True:
+                    debug_log(f"Inheriting Sim Lives in Kingdom: {self.get_sim_neighborhood_id(inheriting_sim_info) == neighborhood_id}")
+                    
+                    if self.get_sim_neighborhood_id(inheriting_sim_info) == neighborhood_id and not inheriting_sim_info.is_dead and inheriting_sim_info.age >= Age.TEEN:
+                        if self.has_noble_career(inheriting_sim_info) == False:
+                            debug_log(f"Remove {inheriting_sim_info.first_name}'s Adult Careers")
+
+                            if _remove_fulltime_careers(inheriting_sim_info):
+                                debug_log(f"Giving {inheriting_sim_info.first_name} Noble Career")
+                                _add_noble_career(inheriting_sim_info)
     except:
         debug_log("EXCEPTION in KingdomService.process_inheriting_sim hook:\n" + traceback.format_exc())
         
@@ -685,7 +720,7 @@ def _hook_deathtracker_set_death_type(original, self, *args, **kwargs):
         kingdom_service = services.kingdom_service()
         
         dying_sim_info = self._sim_info
-        if dying_sim_info != None:
+        if dying_sim_info is not None:
             debug_log("**SIM ABOUT TO DIE**")
             debug_log(f"Dying Sim Name: {dying_sim_info.first_name} {dying_sim_info.last_name}")
 
@@ -714,7 +749,7 @@ def _hook_careertracker_add_career(original, self, *args, **kwargs):
 
         sim_info = self._sim_info
 
-        if sim_info != None:
+        if sim_info is not None:
             is_noble = kingdom_service.has_noble_career(sim_info)
 
             if sim_info.household.is_player_household != True and is_noble == True:
