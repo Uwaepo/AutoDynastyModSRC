@@ -26,7 +26,7 @@ from relationships.relationship_tracker import RelationshipTracker
 from zone import Zone
 
 # *My Modules*
-from . import constants
+from .auto_dynasty_settings import SETTINGS
 
 from .utils.injection import inject_to
 from .utils.debug_logger import debug_log
@@ -154,7 +154,7 @@ def should_be_black_sheep(target_sim_info: SimInfo) -> bool:
 
     headmember_rel = head_sim_info.relationship_tracker.get_relationship_score(target_sim_info.id)
 
-    if headmember_rel <= constants.MAXIMUM_REL_BLACKSHEEP_THRESHOLD:
+    if headmember_rel <= SETTINGS.maximum_rel_blacksheep_threshold:
         return True
 
     return False
@@ -174,6 +174,9 @@ def should_be_black_sheep(target_sim_info: SimInfo) -> bool:
 # If there is an existing heir to the dynasty, they will only be replaced if they have less than a +10% relationship with the head. Otherwise, no new heir will be set.
 # Should there be no sim that qualifies as heir, none will be set. Either the existing heir or the lowest ranking dynasty member will take over once the head steps down.
 def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
+    if (SETTINGS.automatic_heir_selection and SETTINGS.global_dynasty_mod_enabler) is not True:
+        return
+
     kingdom_service = services.kingdom_service()
     
     head_sim_info = dynasty.get_head_sim_info()
@@ -189,7 +192,7 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
     if old_heir_sim_info is not None:
         headheir_rel = head_sim_info.relationship_tracker.get_relationship_score(old_heir_sim_info.id)
         
-        if headheir_rel >= constants.MINIMUM_REL_HEIR_THRESHOLD: 
+        if headheir_rel >= SETTINGS.minimum_rel_heir_threshold: 
             return
 
     chosen_heir_sim_info = None
@@ -205,7 +208,7 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
             dynasty.set_black_sheep(target_sim_info,negate=True,update_client=True)
         
         headchild_rel = head_sim_info.relationship_tracker.get_relationship_score(target_sim_info.id)
-        return not headchild_rel <= constants.MINIMUM_REL_HEIR_THRESHOLD and not target_sim_info.has_trait(DynastyTunables.BLACK_SHEEP_TRAIT) and not target_sim_info.is_dead and (target_sim_info.id in dynasty.get_members())
+        return not headchild_rel <= SETTINGS.minimum_rel_heir_threshold and not target_sim_info.has_trait(DynastyTunables.BLACK_SHEEP_TRAIT) and not target_sim_info.is_dead and (target_sim_info.id in dynasty.get_members())
 
     head_children_sim_infos = _order_relative_list(list(head_sim_info.genealogy.get_children_sim_ids_gen()))
 
@@ -259,6 +262,9 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
 
 # If there are no qualifying successor sims found, the noble rank will be lost unless manually reclaimed by the player.
 def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
+    if SETTINGS.global_noble_mod_enabler is not True:
+        return
+
     kingdom_service = services.kingdom_service()
 
     if noble_sim_info.household.is_player_household == True or not kingdom_service.has_noble_career(noble_sim_info) or kingdom_service.get_sim_neighborhood_id(noble_sim_info) is None:
@@ -278,7 +284,7 @@ def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
                 lower_noble_rank = False
         
         headchild_rel = noble_sim_info.relationship_tracker.get_relationship_score(target_sim_info.id)
-        return not headchild_rel < constants.MINIMUM_REL_NOBLEINHERIT_THRESHOLD and not target_sim_info.is_dead and kingdom_service.get_sim_neighborhood_id(noble_sim_info) == kingdom_service.get_sim_neighborhood_id(target_sim_info) and target_sim_info.age >= Age.TEEN and lower_noble_rank
+        return not headchild_rel < SETTINGS.minimum_rel_nobleinherit_threshold and not target_sim_info.is_dead and kingdom_service.get_sim_neighborhood_id(noble_sim_info) == kingdom_service.get_sim_neighborhood_id(target_sim_info) and target_sim_info.age >= Age.TEEN and lower_noble_rank
     
     noble_dynasty = _get_sim_dynasty(noble_sim_info)
     
@@ -318,6 +324,9 @@ def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
 # If a dynasty member has a -60% relationship or lower with the head sim, they will be outcasted in the dynasty.
 # If an existing dynasty outcast has a +0% or more with the head sim, their outcast status will be revoked.
 def _calculate_dynasty_black_sheeps(dynasty) -> None:
+    if (SETTINGS.automatic_blacksheep_selection and SETTINGS.global_dynasty_mod_enabler) is not True:
+        return
+
     head_sim_info = dynasty.get_head_sim_info()
 
     if head_sim_info is None:
@@ -340,16 +349,31 @@ def _calculate_dynasty_black_sheeps(dynasty) -> None:
 
         is_black_sheep = member_sim_info.has_trait(DynastyTunables.BLACK_SHEEP_TRAIT)
 
-        if is_black_sheep and headmember_rel > constants.MINIMUM_REL_REMOVEBLACKSHEEP_THRESHOLD:
+        if is_black_sheep and headmember_rel > SETTINGS.minimum_rel_removeblacksheep_threshold:
             dynasty.set_black_sheep(member_sim_info,negate=True,update_client=True)
-        elif not is_black_sheep and headmember_rel <= constants.MAXIMUM_REL_BLACKSHEEP_THRESHOLD:
+        elif not is_black_sheep and headmember_rel <= SETTINGS.maximum_rel_blacksheep_threshold:
             dynasty.set_black_sheep(member_sim_info,negate=False,update_client=True)
 
+
+def _get_highest_prestige_dynasty(dynasty_a,dynasty_b) -> Dynasty:
+    highest_dynasty = dynasty_a
+    try:
+        if highest_dynasty is not None and dynasty_b is not None:
+            if dynasty_b.get_prestige_value() > highest_dynasty.get_prestige_value():
+                highest_dynasty = dynasty_b
+        elif dynasty_b is not None:
+            highest_dynasty = dynasty_b
+    except:
+        return highest_dynasty
+    return highest_dynasty
 
 # Function Name: _check_child_for_dynasties()
 # Description: Once a new child is born or adopted, this checks their parents for dynasties. If the parent is a head/heir of their dynasty, the child may be added.
 # If both parents are in different dynasties which they are head/heirs of, the child will be added to whichever dynasty has the highest prestige.
 def _check_child_for_dynasties(sim_info) -> None:
+    if (SETTINGS.add_dynasty_children in ("head","headheir","all") and SETTINGS.automatic_children_join and SETTINGS.global_dynasty_mod_enabler) is not True :
+        return
+
     if sim_info is None:
         return
     
@@ -393,8 +417,12 @@ def _check_child_for_dynasties(sim_info) -> None:
         debug_log(f"Parent Dynasty Name: {parent_dynasty.name}")
         debug_log(f"Parent Dynasty Prestige: {parent_dynasty.get_prestige_value()}")
         
-        if parent_sim_id != parent_dynasty.get_head_sim_id() and parent_sim_id != parent_dynasty.get_heir_sim_id():
-            continue
+        if SETTINGS.add_dynasty_children == "headheir":
+            if parent_sim_id != parent_dynasty.get_head_sim_id() and parent_sim_id != parent_dynasty.get_heir_sim_id():
+                continue
+        elif SETTINGS.add_dynasty_children == "head":
+            if parent_sim_id != parent_dynasty.get_head_sim_id():
+                continue
         
         if highest_dynasty is None:
             highest_dynasty = parent_dynasty
@@ -412,7 +440,7 @@ def _check_child_for_dynasties(sim_info) -> None:
 # If only one side is a head/heir of a dynasty, the other member will be added.
 # If both are heads/heirs of a dynasty, the sim from the lower prestige dynasty will join the higher one.
 def _on_sim_marriage(sim_info,spouse_sim_info):
-    if sim_info.household.is_player_household == True or spouse_sim_info.household.is_player_household == True:
+    if (SETTINGS.add_dynasty_spouse in ("head","headheir","all") and SETTINGS.automatic_spouse_join and SETTINGS.global_dynasty_mod_enabler) is not True:
         return
     
     sim_dynasty = _get_sim_dynasty(sim_info)
@@ -421,35 +449,47 @@ def _on_sim_marriage(sim_info,spouse_sim_info):
     if _is_dynasty_played(sim_dynasty) == True or _is_dynasty_played(spouse_dynasty)  == True:
         return
         
-    sim_is_headheir = False
-    spouse_is_headheir = False 
+    sim_is_head = False
+    sim_is_heir = False
+    spouse_is_head = False
+    spouse_is_heir = False 
 
     debug_log("**AUTODYNASTYMOD SIM MARRIAGE CHECK**")
     debug_log(f"Sim Name: {sim_info.first_name} {sim_info.last_name}")
     debug_log(f"Spouse Name: {spouse_sim_info.first_name} {spouse_sim_info.last_name}")
 
     if sim_dynasty is not None:
-        sim_is_headheir = sim_info == sim_dynasty.get_head_sim_info() or sim_info == sim_dynasty.get_heir_sim_info()
-
+        sim_is_head = sim_info == sim_dynasty.get_head_sim_info()
+        sim_is_heir = sim_info == sim_dynasty.get_head_sim_info()
+        
     if spouse_dynasty is not None:
-        spouse_is_headheir = spouse_sim_info == spouse_dynasty.get_head_sim_info() or spouse_sim_info == spouse_dynasty.get_heir_sim_info()
+        spouse_is_head = spouse_sim_info == spouse_dynasty.get_heir_sim_info()
+        spouse_is_heir = spouse_sim_info == spouse_dynasty.get_heir_sim_info()
 
     debug_log(f"Sim Is Dynasty Head/Heir: {sim_is_headheir}")
     debug_log(f"Spouse Is Dynasty Head/Heir: {spouse_is_headheir}")
 
-    if sim_is_headheir == False and spouse_is_headheir == False:
+    if SETTINGS.add_dynasty_spouse == "head":
+        if sim_is_head == False:
+            sim_dynasty = None
+        if spouse_is_head == False:
+            spouse_dynasty = None
+    elif SETTINGS.add_dynasty_spouse == "headheir":
+        if (sim_is_head and sim_is_heir) == False:
+            sim_dynasty = None
+        if (spouse_is_head and spouse_is_heir) == False:
+            spouse_dynasty = None
+
+    highest_dynasty = _get_highest_prestige_dynasty(sim_dynasty,spouse_dynasty)
+    
+    if highest_dynasty is None:
         return
-    elif sim_is_headheir == True and spouse_is_headheir == False:
-        sim_dynasty.add_member(spouse_sim_info,update_client=True)
-    elif sim_is_headheir == False and spouse_is_headheir == True:
-        spouse_dynasty.add_member(sim_info,update_client=True)
+
+    if highest_dynasty == sim_dynasty:
+        highest_dynasty.add_member(spouse_sim_info,update_client=True)
     else:
-        if sim_dynasty.get_prestige_value() > spouse_dynasty.get_prestige_value() and sim_is_headheir == True:
-            debug_log(f"Adding {spouse_sim_info.first_name} {spouse_sim_info.last_name} to {sim_dynasty.name} Dynasty.")
-            sim_dynasty.add_member(spouse_sim_info,update_client=True)
-        else:
-            debug_log(f"Adding {sim_info.first_name} {sim_info.last_name} to {spouse_dynasty.name} Dynasty.")
-            spouse_dynasty.add_member(sim_info,update_client=True)
+        highest_dynasty.add_member(sim_info,update_client=True)
+    return
 
 
 # Function Name: _calculate_dynasty_relations()
@@ -459,7 +499,7 @@ def _on_sim_marriage(sim_info,spouse_sim_info):
 # To remove an existing alliance, a head sim must not have a positive relationship with another and must have a small or negative average relationship with all members.
 # To remove an existing rivalry, a head sim must have a positive relationship with the other head sim.
 def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
-    if not constants.AUTO_RELATIONS_ENABLED == True:
+    if (SETTINGS.global_dynasty_relations_enabler and SETTINGS.global_dynasty_mod_enabler) is not True:
         return
 
     dynasty_service = services.dynasty_service()
@@ -492,55 +532,57 @@ def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
 
     dynasty_allies = list(main_dynasty._alliances)
 
-    for ally_dynasty_id in dynasty_allies:
-        ally_dynasty = dynasty_service.get_dynasty(ally_dynasty_id)
+    if SETTINGS.automatic_remove_alliances == True:
+        for ally_dynasty_id in dynasty_allies:
+            ally_dynasty = dynasty_service.get_dynasty(ally_dynasty_id)
 
-        if ally_dynasty is None or ally_dynasty == main_dynasty:
-            continue
+            if ally_dynasty is None or ally_dynasty == main_dynasty:
+                continue
 
-        ally_head_sim_info = ally_dynasty.get_head_sim_info()
+            ally_head_sim_info = ally_dynasty.get_head_sim_info()
 
-        if ally_head_sim_info is None or _is_dynasty_played(ally_dynasty)  == True:
-            continue
+            if ally_head_sim_info is None or _is_dynasty_played(ally_dynasty)  == True:
+                continue
 
-        if main_dynasty.is_rival(ally_dynasty):
-            dynasty_service.end_rivalry(main_dynasty,ally_dynasty)
+            if main_dynasty.is_rival(ally_dynasty):
+                dynasty_service.end_rivalry(main_dynasty,ally_dynasty)
 
-        ally_head_rel = main_head_sim_info.relationship_tracker.get_relationship_score(ally_head_sim_info.id)
-        ally_average_rel = _calculate_average_dynasty_rel(ally_dynasty)
+            ally_head_rel = main_head_sim_info.relationship_tracker.get_relationship_score(ally_head_sim_info.id)
+            ally_average_rel = _calculate_average_dynasty_rel(ally_dynasty)
 
-        debug_log(f"Ally Dynasty name: {ally_dynasty.name}")
-        debug_log(f"Ally Head Relationship: {ally_head_rel}")
-        debug_log(f"Ally Average Relationship: {ally_average_rel}")
+            debug_log(f"Ally Dynasty name: {ally_dynasty.name}")
+            debug_log(f"Ally Head Relationship: {ally_head_rel}")
+            debug_log(f"Ally Average Relationship: {ally_average_rel}")
 
-        if (ally_head_rel <= constants.MAXIMUM_HEAD_REL_REMOVE_ALLY and ally_average_rel <= constants.MAXIMUM_AVERAGE_REL_REMOVE_ALLY):
-            debug_log(f"Removing {ally_dynasty.name} as {main_dynasty.name} ally.")
-            dynasty_service.end_alliance(main_dynasty,ally_dynasty)
+            if (ally_head_rel <= SETTINGS.maximum_head_rel_remove_ally and ally_average_rel <= SETTINGS.maximum_average_rel_remove_ally):
+                debug_log(f"Removing {ally_dynasty.name} as {main_dynasty.name} ally.")
+                dynasty_service.end_alliance(main_dynasty,ally_dynasty)
 
     dynasty_rivals = list(main_dynasty._rivalries)
 
-    for rival_dynasty_id in dynasty_rivals:
-        rival_dynasty = dynasty_service.get_dynasty(rival_dynasty_id)
+    if SETTINGS.automatic_remove_rivalries == True:
+        for rival_dynasty_id in dynasty_rivals:
+            rival_dynasty = dynasty_service.get_dynasty(rival_dynasty_id)
 
-        if rival_dynasty is None or rival_dynasty == main_dynasty:
-            continue
+            if rival_dynasty is None or rival_dynasty == main_dynasty:
+                continue
 
-        rival_head_sim_info = rival_dynasty.get_head_sim_info()
+            rival_head_sim_info = rival_dynasty.get_head_sim_info()
 
-        if rival_head_sim_info is None or _is_dynasty_played(rival_dynasty)  == True:
-            continue
-        
-        rival_head_rel = main_head_sim_info.relationship_tracker.get_relationship_score(rival_head_sim_info.id)
+            if rival_head_sim_info is None or _is_dynasty_played(rival_dynasty)  == True:
+                continue
+            
+            rival_head_rel = main_head_sim_info.relationship_tracker.get_relationship_score(rival_head_sim_info.id)
 
-        debug_log(f"Rival Dynasty name: {rival_dynasty.name}")
-        debug_log(f"Rival Head Relationship: {rival_head_rel}")
-        
-        if rival_head_rel >= constants.MINIMUM_HEAD_REL_REMOVE_RIVAL:
-            debug_log(f"Removing {rival_dynasty.name} as {main_dynasty.name} rival.")
-            dynasty_service.end_rivalry(main_dynasty,rival_dynasty)
+            debug_log(f"Rival Dynasty name: {rival_dynasty.name}")
+            debug_log(f"Rival Head Relationship: {rival_head_rel}")
+            
+            if rival_head_rel >= SETTINGS.minimum_head_rel_remove_rival:
+                debug_log(f"Removing {rival_dynasty.name} as {main_dynasty.name} rival.")
+                dynasty_service.end_rivalry(main_dynasty,rival_dynasty)
 
     all_dynasties = dynasty_service.get_all_dynasties()
-
+    
     for target_dynasty in all_dynasties.values():
         if target_dynasty is None:
             continue
@@ -562,10 +604,10 @@ def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
         debug_log(f"Target Average Relationship: {target_average_rel}")
         debug_log(f"Target Prestige Level: {target_dynasty_prestige_level}")
 
-        if (target_head_rel >= constants.MINIMUM_HEAD_REL_NEW_ALLY or target_average_rel >= constants.MINIMUM_AVERAGE_REL_NEW_ALLY) and target_dynasty_prestige_level in range(main_dynasty_prestige_level - constants.MAXIMUM_LOWER_LEVEL_GAP_ALLY, main_dynasty_prestige_level + constants.MAXIMUM_LOWER_LEVEL_GAP_ALLY):
+        if (target_head_rel >= SETTINGS.minimum_head_rel_new_ally or target_average_rel >= SETTINGS.minimum_average_rel_new_ally) and SETTINGS.automatic_alliances == True and target_dynasty_prestige_level in range(main_dynasty_prestige_level - SETTINGS.maximum_level_gap_new_ally, main_dynasty_prestige_level + SETTINGS.maximum_level_gap_new_ally):
             debug_log(f"Adding {target_dynasty.name} as {main_dynasty.name} ally.")
             dynasty_service.add_alliance(main_dynasty,target_dynasty)
-        elif (target_head_rel <= constants.MAXIMUM_HEAD_REL_NEW_RIVAL or target_average_rel <= constants.MAXIMUM_AVERAGE_REL_NEW_RIVAL):
+        elif (target_head_rel <= SETTINGS.maximum_head_rel_new_rival or target_average_rel <= SETTINGS.maximum_average_rel_new_rival) and SETTINGS.automatic_rivalries == True:
             debug_log(f"Adding {target_dynasty.name} as {main_dynasty.name} rival.")
             dynasty_service.add_rivalry(main_dynasty,target_dynasty)
 
@@ -730,6 +772,9 @@ def _hook_dynastyservice_on_all_households_and_sim_infos_loaded(original, self, 
 def _hook_kingdomservice_process_inhertiing_sim(original, self, neighborhood_id, noble_sim_info, inheriting_sim_id, *args, **kwargs):
     debug_log("HOOK: KingdomService.process_inheriting_sim fired")
     try:
+        if SETTINGS.global_noble_mod_enabler != True:
+            return
+
         if neighborhood_id is not None:
             debug_log("**NOBLE DEATH**")
             debug_log(f"Noble Sim Name: {noble_sim_info.first_name} {noble_sim_info.last_name}")
