@@ -1,13 +1,17 @@
 import json
 import os
 
+from pathlib import Path
+
+import shutil
+
 from . import constants
 
 from .utils.debug_logger import debug_log
 
 
 class GlobalSettings:
-    FILE_NAME = (f"[{constants.MOD_AUTHOR}]-{constants.MOD_NAME}-CONFIG.json")
+    FILE_NAME = constants.CONFIG_FILE_NAME
 
     def __init__(self):
         # Enablers
@@ -24,6 +28,8 @@ class GlobalSettings:
         self.automatic_rivalries = True
         self.automatic_remove_alliances = True
         self.automatic_remove_rivalries = True
+
+        self.enforce_dynasty_name = False
 
         # Dynasty Roles
         self.minimum_rel_heir_threshold = 10
@@ -50,12 +56,53 @@ class GlobalSettings:
 
     @classmethod
     def get_file_path(cls):
-        base = os.path.join(
-            constants.SIMS4_DOCUMENTS_PATH,
-            "Mods"
+        mod_folder_directory = Path(constants.MODS_FOLDER)
+        config_folder = mod_folder_directory
+        
+        found_file = next(
+            (
+                file for file in mod_folder_directory.rglob("*.ts4script")
+                if file.name.replace("[","").replace("]","") == constants.MOD_FILE_NAME.replace("[","").replace("]","")
+            ),
+            None
         )
 
-        return os.path.join(base, cls.FILE_NAME)
+        if found_file:
+            config_folder = found_file.parent
+
+        config_folder.mkdir(parents=True, exist_ok=True)
+
+        destination = config_folder / cls.FILE_NAME
+
+        existing_config = None
+
+        for old_config_name in constants.OLD_CONFIG_NAMES:
+            existing_config = next(
+                (
+                    file for file in mod_folder_directory.rglob("*.json")
+                    if file.name.replace("[","").replace("]","") == old_config_name.replace("[","").replace("]","")
+                ),
+                None
+            )
+            if existing_config:
+                break
+        
+        if existing_config is None:
+            existing_config = next(
+                (
+                    file for file in mod_folder_directory.rglob("*.json")
+                    if file.name.replace("[","").replace("]","") == constants.CONFIG_FILE_NAME.replace("[","").replace("]","")
+                ),
+                None
+            )
+
+            if existing_config:
+                if existing_config.parent != config_folder:
+                    shutil.move(existing_config, destination)
+        else:
+            shutil.move(existing_config, destination)
+        
+        return destination
 
     def to_dict(self):
         return {
@@ -73,8 +120,10 @@ class GlobalSettings:
             "automatic_remove_alliances": self.automatic_remove_alliances,
             "automatic_remove_rivalries": self.automatic_remove_rivalries,
 
+            "enforce_dynasty_name": self.enforce_dynasty_name,
+
             "minimum_rel_heir_threshold": self.minimum_rel_heir_threshold,
-            "minimum_rel_blacksheep_threshold": self.minimum_rel_blacksheep_threshold,
+            "maximum_rel_blacksheep_threshold": self.maximum_rel_blacksheep_threshold,
             "minimum_rel_removeblacksheep_threshold": self.minimum_rel_removeblacksheep_threshold,
 
             "minimum_rel_nobleinherit_threshold": self.minimum_rel_nobleinherit_threshold,
@@ -107,8 +156,10 @@ class GlobalSettings:
         self.automatic_remove_alliances = data.get("automatic_remove_alliances", True)
         self.automatic_remove_rivalries = data.get("automatic_remove_rivalries", True)
 
+        self.enforce_dynasty_name = data.get("enforce_dynasty_name", False)
+
         self.minimum_rel_heir_threshold = data.get("minimum_rel_heir_threshold", 10)
-        self.minimum_rel_blacksheep_threshold = data.get("minimum_rel_blacksheep_threshold", -60)
+        self.maximum_rel_blacksheep_threshold = data.get("maximum_rel_blacksheep_threshold", -60)
         self.minimum_rel_removeblacksheep_threshold = data.get("minimum_rel_removeblacksheep_threshold", 0)
 
         self.minimum_rel_nobleinherit_threshold = data.get("minimum_rel_nobleinherit_threshold", 0)

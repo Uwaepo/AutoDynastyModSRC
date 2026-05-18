@@ -23,6 +23,8 @@ MOD_SA_IDS = {
     "openGlobalNobleInheritanceEnabler_SA": 11298748893984418377,
     "openNobleInheritanceRelThresholdPicker_SA": 15602580910547423574,
 
+    "openEnforceDynastyName_SA": 5021125578673096937,
+
     "openDynastyChildrenSub_SA": 5268191022460015977,
     "openGlobalDynastyChildrenEnabler_SA": 1692262163354922680,
     "openAllowWhichChildrenPicker_SA": 1844658760351774399,

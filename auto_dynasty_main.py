@@ -12,6 +12,10 @@ from dynasty.dynasty import Dynasty
 from dynasty.dynasty_service import DynastyService
 from dynasty.dynasty_tunings import DynastyTunables
 
+from event_testing.test_events import TestEvent
+
+from relationships.global_relationship_tuning import RelationshipGlobalTuning
+
 from interactions.utils.death import DeathTracker
 
 from kingdom.kingdom_service import KingdomService
@@ -27,9 +31,13 @@ from zone import Zone
 
 # *My Modules*
 from .auto_dynasty_settings import SETTINGS
+from . import constants
 
 from .utils.injection import inject_to
 from .utils.debug_logger import debug_log
+
+import sims4
+logger = sims4.log.Logger('Dynasty')
 
 # *Functions*
 
@@ -52,7 +60,7 @@ def _is_dynasty_played(dynasty: Dynasty) -> bool:
     try:
         sim_info_manager = services.sim_info_manager()
 
-        member_sim_ids = dynasty.get_members()
+        member_sim_ids = list(dynasty.get_members())
 
         for member_sim_id in member_sim_ids:
             member_sim_info = sim_info_manager.get(member_sim_id)
@@ -82,7 +90,16 @@ def _set_sim_as_noble_successor(noble_sim_info: SimInfo,inheriting_sim_info: Sim
     if noble_sim_info is None or inheriting_sim_info is None:
         return
 
-    if kingdom_service.has_noble_career(noble_sim_info) and noble_sim_info != inheriting_sim_info:
+    noble_neighborhood_id = kingdom_service.get_sim_neighborhood_id(noble_sim_info)
+    inherit_neighborhood_id = kingdom_service.get_sim_neighborhood_id(inheriting_sim_info)
+
+    if noble_neighborhood_id is None or noble_neighborhood_id is not inherit_neighborhood_id:
+        return
+    
+    kingdom_data = kingdom_service.get_or_create_neighborhood_data(noble_neighborhood_id)
+    sim_data = kingdom_service.get_sim_data(kingdom_data, noble_sim_info.id)
+
+    if kingdom_service.has_noble_career(noble_sim_info) and noble_sim_info != inheriting_sim_info and sim_data:
         debug_log(f"Setting {inheriting_sim_info.first_name} {inheriting_sim_info.last_name} as {noble_sim_info.first_name} {noble_sim_info.last_name}'s noble successor.")
         kingdom_service.set_inheriting_sim(noble_sim_info,inheriting_sim_info)
                 
@@ -267,6 +284,9 @@ def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
 
     kingdom_service = services.kingdom_service()
 
+    if noble_sim_info is None:
+        return
+
     if noble_sim_info.household.is_player_household == True or not kingdom_service.has_noble_career(noble_sim_info) or kingdom_service.get_sim_neighborhood_id(noble_sim_info) is None:
         return
 
@@ -335,7 +355,7 @@ def _calculate_dynasty_black_sheeps(dynasty) -> None:
     if _is_dynasty_played(dynasty)  == True:
         return
 
-    member_sim_ids = dynasty.get_members()
+    member_sim_ids = list(dynasty.get_members())
 
     for member_sim_id in member_sim_ids:
         member_sim_info = services.sim_info_manager().get(member_sim_id)
@@ -377,7 +397,7 @@ def _check_child_for_dynasties(sim_info) -> None:
     if sim_info is None:
         return
     
-    if sim_info.household.is_player_household == True:
+    if sim_info.household.is_player_household == True or _get_sim_dynasty(sim_info) is not None or sim_info.is_young_adult_or_older:
         return
     
     sim_is_in_dynasty = _get_sim_dynasty(sim_info) is not None
@@ -434,6 +454,16 @@ def _check_child_for_dynasties(sim_info) -> None:
         debug_log(f"Adding {sim_info.first_name} {sim_info.last_name} to {highest_dynasty.name} Dynasty.")
         highest_dynasty.add_member(sim_info,update_client=True)
 
+        if SETTINGS.enforce_dynasty_name is True and sim_info.is_child_or_younger:
+            for parent_sim_id in parent_sim_ids:
+                parent_sim_info = services.sim_info_manager().get(parent_sim_id)
+                if parent_sim_info is None:
+                    continue
+                if highest_dynasty is _get_sim_dynasty(parent_sim_info):
+                    if parent_sim_info.last_name.split(' ')[0] == highest_dynasty.name:
+                        sim_info.last_name = highest_dynasty.name
+                        break
+
 
 # Function Name: _on_sim_marriage()
 # Description: Once a marriage occurs, this function checks if either/both sims are in a dynasty and are the head/heir.
@@ -460,14 +490,14 @@ def _on_sim_marriage(sim_info,spouse_sim_info):
 
     if sim_dynasty is not None:
         sim_is_head = sim_info == sim_dynasty.get_head_sim_info()
-        sim_is_heir = sim_info == sim_dynasty.get_head_sim_info()
+        sim_is_heir = sim_info == sim_dynasty.get_heir_sim_info()
         
     if spouse_dynasty is not None:
-        spouse_is_head = spouse_sim_info == spouse_dynasty.get_heir_sim_info()
+        spouse_is_head = spouse_sim_info == spouse_dynasty.get_head_sim_info()
         spouse_is_heir = spouse_sim_info == spouse_dynasty.get_heir_sim_info()
 
-    debug_log(f"Sim Is Dynasty Head/Heir: {sim_is_headheir}")
-    debug_log(f"Spouse Is Dynasty Head/Heir: {spouse_is_headheir}")
+    debug_log(f"Sim Is Dynasty Head/Heir: {sim_is_head or sim_is_heir}")
+    debug_log(f"Spouse Is Dynasty Head/Heir: {spouse_is_head or spouse_is_heir}")
 
     if SETTINGS.add_dynasty_spouse == "head":
         if sim_is_head == False:
@@ -475,9 +505,9 @@ def _on_sim_marriage(sim_info,spouse_sim_info):
         if spouse_is_head == False:
             spouse_dynasty = None
     elif SETTINGS.add_dynasty_spouse == "headheir":
-        if (sim_is_head and sim_is_heir) == False:
+        if (sim_is_head or sim_is_heir) == False:
             sim_dynasty = None
-        if (spouse_is_head and spouse_is_heir) == False:
+        if (spouse_is_head or spouse_is_heir) == False:
             spouse_dynasty = None
 
     highest_dynasty = _get_highest_prestige_dynasty(sim_dynasty,spouse_dynasty)
@@ -489,7 +519,46 @@ def _on_sim_marriage(sim_info,spouse_sim_info):
         highest_dynasty.add_member(spouse_sim_info,update_client=True)
     else:
         highest_dynasty.add_member(sim_info,update_client=True)
+
+    _sync_dynasty_names(sim_info,spouse_sim_info)
+
     return
+
+def _sync_dynasty_names(sim_info,spouse_sim_info,dynasty_save_data=None):
+    if (SETTINGS.enforce_dynasty_name and SETTINGS.global_dynasty_mod_enabler) is not True:
+        return
+
+    if sim_info is None or spouse_sim_info is None:
+        return
+
+    dynasty = _get_sim_dynasty(sim_info)
+
+    if dynasty is None or dynasty != _get_sim_dynasty(spouse_sim_info) or sim_info.last_name == spouse_sim_info.last_name or _is_dynasty_played(dynasty) == True:
+        return
+
+    dynasty_name = getattr(dynasty, "name", None)
+    
+    if not dynasty_name:
+        return
+
+    debug_log(f"**DYNASTY MARRIAGE NAME CHECK**")
+    debug_log(f"Sim last name: {sim_info.last_name}")
+    debug_log(f"Spouse last name: {spouse_sim_info.last_name}")
+    debug_log(f"Dynasty name: {dynasty_name}")
+
+    sim_has_dynasty_name = sim_info.last_name.split(' ')[0] == dynasty_name
+    spouse_has_dynasty_name = spouse_sim_info.last_name.split(' ')[0] == dynasty_name
+
+    debug_log(f"Sim has dynasty name: {sim_has_dynasty_name}")
+    debug_log(f"Spouse has dynasty name: {spouse_has_dynasty_name}")
+    
+    if sim_has_dynasty_name != spouse_has_dynasty_name:
+        if sim_has_dynasty_name:
+            debug_log(f"Updating spouse's name")
+            spouse_sim_info.last_name = dynasty_name
+        elif spouse_has_dynasty_name:
+            debug_log(f"Updating sim's name")
+            sim_info.last_name = dynasty_name
 
 
 # Function Name: _calculate_dynasty_relations()
@@ -515,7 +584,7 @@ def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
 
     def _calculate_average_dynasty_rel(target_dynasty: Dynasty):
         rel_total = 0
-        target_member_sim_ids = target_dynasty.get_members()
+        target_member_sim_ids = list(target_dynasty.get_members())
 
         for member_sim_id in target_member_sim_ids:
             if member_sim_id is None:
@@ -614,19 +683,94 @@ def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
 
 # *Hooks*
 
-# Runs when the parent relationship is set for a sim. Presumably when a child is born or adopted.
-# The child is checked for any valid dynasties.
-@inject_to(GenealogyTracker, "set_parent_relation")
-def _hook_genealogy_tracker_set_parent_relation(original, self, *args, **kwargs):
-    debug_log("HOOK: GenealogyTracker.set_parent_relation fired")
-    result = original(self,*args,**kwargs)
+# Daily update every 7 AM in sims time.
+# Updates relationship, members and enforces dynasty surnames.
+@inject_to(DynastyService, "_daily_update")
+def _hook_dynastyservice_daily_update(original, self, *args, **kwargs):
     try:
-        child_sim_id = self._owner_id
-        child_sim_info = services.sim_info_manager().get(child_sim_id)
-        
-        _check_child_for_dynasties(child_sim_info)
+        sim_info_manager = services.sim_info_manager()
+
+        for (dynasty_id, dynasty) in self._dynasties.items():
+            if dynasty and _is_dynasty_played(dynasty) is False:
+                _calculate_dynasty_heir(dynasty)
+                _calculate_dynasty_black_sheeps(dynasty)
+                _calculate_dynasty_relations(dynasty)
+
+                member_sim_ids = list(dynasty.get_members())
+                for member_sim_id in member_sim_ids:
+                    member_sim_info = sim_info_manager.get(member_sim_id)
+                    if member_sim_info:
+                        member_children_sim_infos = _order_relative_list(list(member_sim_info.genealogy.get_children_sim_ids_gen()))
+                        for child_sim_info in member_children_sim_infos:
+                            if _get_sim_dynasty(child_sim_info) is None:
+                                _check_child_for_dynasties(child_sim_info)
+                        spouse_sim_info = sim_info_manager.get(member_sim_info.spouse_sim_id)
+                        if spouse_sim_info is not None:
+                            if dynasty is not _get_sim_dynasty(spouse_sim_info):
+                                _on_sim_marriage(member_sim_info,spouse_sim_info)
+                            else:
+                                if member_sim_info.last_name != spouse_sim_info.last_name:
+                                    _sync_dynasty_names(member_sim_info,spouse_sim_info)
     except:
-        debug_log("EXCEPTION in GenealogyTracker.set_parent_relation hook:\n" + traceback.format_exc())
+        debug_log("EXCEPTION in DynastyService._daily_update hook:\n" + traceback.format_exc())
+    return original(self, *args, **kwargs)
+
+
+@inject_to(DynastyService, "_repair_existing_children_for_dynasties")
+def _hook_dynastyservice_repair_existing_children_for_dynastiest(original, self, update_kingdom_titles, *args, **kwargs):
+    repaired = 0
+    sim_info_manager = services.sim_info_manager()
+    if sim_info_manager is None:
+        logger.error('DynastyService: sim_info_manager is None, skipping offspring repair.')
+        return 0
+    kingdom_service = services.kingdom_service()
+    for child_sim_info in sim_info_manager.get_all():
+        if not child_sim_info is None:
+            if not child_sim_info.is_pet:
+                if self.get_sim_dynasty(child_sim_info.id) is None:
+                    highest_dynasty = None
+                    
+                    for parent_id in child_sim_info.genealogy.get_parent_sim_ids_gen():
+                        dynasty = self.get_dynasty(parent_id)
+                        highest_dynasty = _get_highest_prestige_dynasty(highest_dynasty,dynasty)
+                        repaired += 1
+                    
+                    if highest_dynasty is not None:
+                        highest_dynasty.add_member(child_sim_info, update_client = True)
+
+                        if update_kingdom_titles and kingdom_service is not None:
+                            kingdom_service.update_sim_info_title(child_sim_info)
+    return repaired
+
+
+@inject_to(DynastyService, "handle_new_child_event")
+def _hook_dynastyservice_handle_new_child_event(original, self, parent_sim_info, offspring_sim_info, *args, **kwargs):
+    try:
+        if offspring_sim_info is None or offspring_sim_info.is_pet or _get_sim_dynasty(offspring_sim_info) is not None:
+            return
+        _check_child_for_dynasties(offspring_sim_info)
+    except:
+        return original(self, parent_sim_info, offspring_sim_info, *args, **kwargs)
+
+
+@inject_to(DynastyService, "_on_sim_spawned")
+def _hook_editmodesequencecompletestate_on_enter(original, self, *args, **kwargs):
+    debug_log("HOOK: DynastyService._on_sim_spawned fired")
+    result = original(self, *args, **kwargs)
+    try:
+        for (dynasty_id, dynasty) in self._dynasties.items():
+            if dynasty is not None and _is_dynasty_played(dynasty) is not True:
+                member_sim_ids = list(dynasty.get_members())
+                for member_sim_id in member_sim_ids:
+                    member_sim_info = services.sim_info_manager().get(member_sim_id)
+                    if member_sim_info:
+                        spouse_sim_info = services.sim_info_manager().get(member_sim_info.spouse_sim_id)
+                        if spouse_sim_info is not None:
+                            if dynasty is _get_sim_dynasty(spouse_sim_info):
+                                if member_sim_info.last_name != spouse_sim_info.last_name:
+                                    _sync_dynasty_names(member_sim_info,spouse_sim_info)
+    except:
+        debug_log("EXCEPTION in DynastyService._on_sim_spawned hook:\n" + traceback.format_exc())
     return result
 
 
@@ -645,18 +789,17 @@ def _hook_relationship_tracker_add_relationship_bit(original, self, target_sim_i
         target_sim_info = services.sim_info_manager().get(target_sim_id)
         
         if sim_info is not None and target_sim_info is not None:
-            if "romantic-married" in str(bit).lower():
-                _on_sim_marriage(sim_info,target_sim_info)
+            sim_dynasty = _get_sim_dynasty(sim_info)
+            target_dynasty = _get_sim_dynasty(target_sim_info)
+            if sim_dynasty is not None:
+                if sim_info.relationship_tracker.has_bit(target_sim_id, RelationshipGlobalTuning.MARRIAGE_RELATIONSHIP_BIT) and sim_dynasty is not target_dynasty:
+                    _on_sim_marriage(sim_info,target_sim_info)
 
-            sim_a_dynasty = _get_sim_dynasty(sim_info)
-            sim_b_dynasty = _get_sim_dynasty(target_sim_info)
-
-            if (sim_a_dynasty == sim_b_dynasty) and sim_a_dynasty is not None:
-                _calculate_dynasty_heir(sim_a_dynasty)
-                _calculate_dynasty_black_sheeps(sim_a_dynasty)
-            elif (sim_a_dynasty is not None and sim_b_dynasty is not None and sim_a_dynasty != sim_b_dynasty):
-                _calculate_dynasty_relations(sim_a_dynasty)
-                _calculate_dynasty_relations(sim_b_dynasty)
+                if sim_dynasty is target_dynasty:
+                    _calculate_dynasty_heir(sim_dynasty)
+                    _calculate_dynasty_black_sheeps(sim_dynasty)
+                elif target_dynasty is not None:
+                    _calculate_dynasty_relations(sim_dynasty)
 
             sim_a_is_noble = kingdom_service.has_noble_career(sim_info)
             sim_b_is_noble = kingdom_service.has_noble_career(target_sim_info)
@@ -674,13 +817,9 @@ def _hook_relationship_tracker_add_relationship_bit(original, self, target_sim_i
 # Runs when a new sim is added into a dynasty.
 # This allows for dynasty hierarchies to change when new members are introduced through birth, adoption or marriages. (such as heirs changing or members being outcasted)
 @inject_to(Dynasty, "add_member")
-def _hook_dynasty_add_member(original, self, *args, **kwargs):
+def _hook_dynasty_add_member(original, self, sim_info, *args, **kwargs):
     debug_log("HOOK: Dynasty.add_member fired")
-    result = original(self, *args, **kwargs)
-
-    if _is_dynasty_played(self)  == True:
-        return result
-
+    result = original(self, sim_info, *args, **kwargs)
     try:
         _calculate_dynasty_heir(self)
         _calculate_dynasty_black_sheeps(self)
@@ -727,40 +866,13 @@ def _hook_dynasty_set_head(original, self, *args, **kwargs):
         head_children_sim_infos = _order_relative_list(list(head_sim_info.genealogy.get_children_sim_ids_gen()))
 
         for child_sim_info in head_children_sim_infos:
-            if _get_sim_dynasty(child_sim_info) is None and child_sim_info is not None:
+            if _get_sim_dynasty(child_sim_info) is None and child_sim_info is not None and _get_sim_dynasty(child_sim_info) == None:
                 self.add_member(child_sim_info,update_client=True)
 
         _calculate_dynasty_heir(self)
         _calculate_dynasty_black_sheeps(self)
     except:
         debug_log("EXCEPTION in Dynasty.set_head hook:\n" + traceback.format_exc())
-    return result
-
-# Runs when all dynasties and members are first loaded
-@inject_to(DynastyService, "on_all_households_and_sim_infos_loaded")
-def _hook_dynastyservice_on_all_households_and_sim_infos_loaded(original, self, *args, **kwargs):
-    debug_log("HOOK: DynastyService._hook_dynastyservice_on_all_households_and_sim_infos_loaded fired")
-    result = original(self, *args, **kwargs)
-    try:
-        all_dynasties = services.dynasty_service().get_all_dynasties()
-
-        for dynasty in all_dynasties.values():
-            head_sim_info = dynasty.get_head_sim_info()
-
-            if head_sim_info is None:
-                continue
-
-            head_children_sim_infos = _order_relative_list(list(head_sim_info.genealogy.get_children_sim_ids_gen()))
-
-            for child_sim_info in head_children_sim_infos:
-                if _get_sim_dynasty(child_sim_info) is None and child_sim_info is not None:
-                    dynasty.add_member(child_sim_info,update_client=True)
-
-            _calculate_dynasty_heir(dynasty)
-            _calculate_dynasty_black_sheeps(dynasty)
-            _calculate_dynasty_relations(dynasty)
-    except:
-        debug_log("EXCEPTION in DynastyService.on_all_households_and_sim_infos_loaded hook:\n" + traceback.format_exc())
     return result
 
 

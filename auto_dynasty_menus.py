@@ -267,6 +267,8 @@ def show_dynasty_settings_picker(sim_info):
             push_sa(sim,MOD_SA_IDS["openDynastyChildrenSub_SA"])
         elif result_tag == "marriagesettings":
             push_sa(sim,MOD_SA_IDS["openDynastyMarriageSub_SA"])
+        elif result_tag == "enforcedynastynamesetting":
+            push_sa(sim,MOD_SA_IDS["openEnforceDynastyName_SA"])
         elif result_tag == "heirsettings":
             push_sa(sim,MOD_SA_IDS["openDynastyHeirSub_SA"])
         elif result_tag == "outcastsettings":
@@ -308,6 +310,16 @@ def show_dynasty_settings_picker(sim_info):
                 "is_enable": True,
                 "icon": sims4.resources.get_resource_key(
                     0x13fab148329e8988,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0xBD0F2677, # Enforce Dynasty Name
+                "row_description_key": 0xD63AD143, # Dynasty marriages and offspring will take the dynasty name where applicable.
+                "tag": "enforcedynastynamesetting",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x28D407A41C85DCA8,
                     0x2F7D0004
                 )
             },

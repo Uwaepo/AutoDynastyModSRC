@@ -6,8 +6,14 @@ from pathlib import Path
 
 # MOD INFORMATION
 
-MOD_NAME = "AutoDynastyMod"
+OLD_CONFIG_NAMES = [
+    "[Uwaepo]-AutoDynastyMod-CONFIG.json"
+]
+
 MOD_AUTHOR = "Uwaepo"
+MOD_NAME = "AutoDynastyInheritance"
+MOD_FILE_NAME = (f"[{MOD_AUTHOR}]-{MOD_NAME}.ts4script")
+CONFIG_FILE_NAME = (f"[{MOD_AUTHOR}]-{MOD_NAME}-CONFIG.json")
 
 # **FILE PATHS**
 
@@ -15,6 +21,12 @@ HOME_PATH = Path.home()
 DOCUMENTS_PATH = DOCUMENTS = HOME_PATH / "Documents"
 
 SIMS4_DOCUMENTS_PATH = DOCUMENTS_PATH / "Electronic Arts" / "The Sims 4"
+
+MODS_FOLDER = SIMS4_DOCUMENTS_PATH / "Mods"
+
+# TUNABLE REFERENCES
+
+MARRIAGE_RELBIT_GUID = 15822
 
 # **DEBUG CONSTANTS**
 #*LOGGING*
