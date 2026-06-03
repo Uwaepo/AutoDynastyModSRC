@@ -79,13 +79,16 @@ def show_text_input_dialog(sim_info, title_key, text_key, field_title_key, on_su
     dialog.add_listener(_on_response)
     dialog.show_dialog()
 
-def show_item_picker_dialog(sim_info, title_key, text_key, rows, on_submit):
+
+def show_item_picker_dialog(sim_info, title_key, text_key, rows, on_submit, max_selectable_num=1):
 
     picker_dialog = UiItemPicker.TunableFactory().default(
         sim_info,
         title= lambda **_: sims4.localization._create_localized_string(title_key),
         text= lambda **_: sims4.localization._create_localized_string(text_key),
     )
+
+    picker_dialog.max_selectable_num = max_selectable_num
 
     for row_data in rows:
         row_description = None

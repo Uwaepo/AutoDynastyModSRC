@@ -228,7 +228,7 @@ def show_enable_disable_setting_picker(sim_info,setting_name,sa_id,parent_sa_id,
     )
 
 
-def show_item_setting_picker(sim_info,rows,on_submit,title_key,text_key):
+def show_item_setting_picker(sim_info,rows,on_submit,title_key,text_key,max_selectable_num=1):
 
     sim = sim_info.get_sim_instance()
     
@@ -240,7 +240,8 @@ def show_item_setting_picker(sim_info,rows,on_submit,title_key,text_key):
         title_key=title_key,
         text_key=text_key,
         rows=rows,
-        on_submit=on_submit
+        on_submit=on_submit,
+        max_selectable_num=max_selectable_num
     )
 
 
@@ -500,6 +501,14 @@ def show_dynastyheir_settings_picker(sim_info):
             push_sa(sim,MOD_SA_IDS["openGlobalDynastyHeirEnabler_SA"])
         elif result_tag == "heirthresholdsetting":
             push_sa(sim,MOD_SA_IDS["openDynastyHeirRelThresholdPicker_SA"])
+        elif result_tag == "heirfamilialconnection":
+            push_sa(sim,MOD_SA_IDS["openDynastyHeirFamilialConnectionPicker_SA"])
+        elif result_tag == "heirgenderpriority":
+            push_sa(sim,MOD_SA_IDS["openDynastyHeirGenderPriorityPicker_SA"])
+        elif result_tag == "heirminimumage":
+            push_sa(sim,MOD_SA_IDS["openDynastyHeirMinimumAgePicker_SA"])
+        elif result_tag == "keepexistingheir":
+            push_sa(sim,MOD_SA_IDS["openDynastyHeirKeepExistingEnabler_SA"])
         elif result_tag == "goback":
             push_sa(sim,MOD_SA_IDS["openDynastySettings_SA"])
 
@@ -529,11 +538,51 @@ def show_dynastyheir_settings_picker(sim_info):
                 )
             },
             {
+                "name_key": 0x50B09308, # Minimum Heir Age
+                "row_description_key": 0xF43DB237, # The minimum age a member must be to be considered as heir.
+                "tag": "heirminimumage",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x92CABAE837970480,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x684160EC, # Required Heir Familial Connection
+                "row_description_key": 0x57630B0C, # What family relation a member must have with a head sim to be considered.
+                "tag": "heirfamilialconnection",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0xF242941B97797833,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x7B309D14, # Keep Existing Heir
+                "row_description_key": 0xF97774E1, # This setting keeps any existing heirs as the heir if they meet the friendly relationship requirement with the head.
+                "tag": "keepexistingheir",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x032479A1A65BC1B9,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x257A53C7, # Heir Gender Priority
+                "row_description_key": 0x1AD87ACC, # Which gender will be prioritised for children, sibling and parent heir selection.
+                "tag": "heirgenderpriority",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x3F4FB938F3131B8D,
+                    0x2F7D0004
+                )
+            },
+            {
                 "name_key": 0xDDC3EC7E, # Go back
                 "tag": "goback",
                 "is_enable": True,
                 "icon": GO_BACK_ICON
-            },
+            }
         ],
         on_submit=on_submit
     )
@@ -561,6 +610,8 @@ def show_dynastyblacksheep_settings_picker(sim_info):
             push_sa(sim,MOD_SA_IDS["openDynastyDelcareOutcastRelThresholdPicker_SA"])
         elif result_tag == "removeoutcastthresholdsetting":
             push_sa(sim,MOD_SA_IDS["openDynastyRevokeOutcastRelThresholdPicker_SA"])
+        elif result_tag == "outcastminimumage":
+            push_sa(sim,MOD_SA_IDS["openDynastyBlackSheepMinimumAgePicker_SA"])
         elif result_tag == "goback":
             push_sa(sim,MOD_SA_IDS["openDynastySettings_SA"])
 
@@ -600,6 +651,16 @@ def show_dynastyblacksheep_settings_picker(sim_info):
                 )
             },
             {
+                "name_key": 0x9B0E1F09, # Minimum Outcast Age
+                "row_description_key": 0x73BDF7F6, # The minimum age a member must be to be declared an outcast.
+                "tag": "outcastminimumage",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x92CABAE837970480,
+                    0x2F7D0004
+                )
+            },
+            {
                 "name_key": 0xDDC3EC7E, # Go back
                 "tag": "goback",
                 "is_enable": True,
@@ -630,6 +691,10 @@ def show_noble_settings_picker(sim_info):
             push_sa(sim,MOD_SA_IDS["openGlobalNobleInheritanceEnabler_SA"])
         elif result_tag == "noblethresholdsetting":
             push_sa(sim,MOD_SA_IDS["openNobleInheritanceRelThresholdPicker_SA"])
+        elif result_tag == "nobleminimumage":
+            push_sa(sim,MOD_SA_IDS["openNobleInheritanceMinimumAgePicker_SA"])
+        elif result_tag == "noblecareerreqs":
+            push_sa(sim,MOD_SA_IDS["openNobleInheritanceCareerReqsPicker_SA"])
         elif result_tag == "goback":
             push_sa(sim,MOD_SA_IDS["openGlobalSettings_SA"])
 
@@ -655,6 +720,26 @@ def show_noble_settings_picker(sim_info):
                 "is_enable": True,
                 "icon": sims4.resources.get_resource_key(
                     0xA2B935892F831E86,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0xBA3AA131, # Minimum Noble Inheritance Age
+                "row_description_key": 0xB09922F8, # The minimum age a sim must be to inherit a noble's title.
+                "tag": "nobleminimumage",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x92CABAE837970480,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0xAC4390F9, # Career Requirements to Inherit
+                "row_description_key": 0xA3752B16, # What career requirements a sim must have to inherit a noble sims title.
+                "tag": "noblecareerreqs",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x9D48D9E47EBD8220,
                     0x2F7D0004
                 )
             },

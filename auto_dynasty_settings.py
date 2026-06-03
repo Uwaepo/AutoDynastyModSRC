@@ -5,6 +5,8 @@ from pathlib import Path
 
 import shutil
 
+from sims.sim_info_types import Age
+
 from . import constants
 
 from .utils.debug_logger import debug_log
@@ -32,12 +34,22 @@ class GlobalSettings:
         self.enforce_dynasty_name = False
 
         # Dynasty Roles
+        self.heir_gender_priority = "none"
+        self.familial_connections_become_heir = ["children","spouse","siblings","parents"]
+        self.heir_minimum_age = "BABY"
+        self.keep_existing_heir = True
+
+        self.outcast_minimum_age = Age.CHILD
+
         self.minimum_rel_heir_threshold = 10
         self.maximum_rel_blacksheep_threshold = -60
         self.minimum_rel_removeblacksheep_threshold = 0
 
         # Noble Inheritance
         self.minimum_rel_nobleinherit_threshold = 0
+
+        self.nobleinherit_minimum_age = Age.TEEN
+        self.nobleinherit_career_req = "all"
         
         # Dynasty Family Changes
         self.add_dynasty_children = "headheir"
@@ -122,11 +134,20 @@ class GlobalSettings:
 
             "enforce_dynasty_name": self.enforce_dynasty_name,
 
+            "heir_gender_priority": self.heir_gender_priority,
+            "familial_connections_become_heir": self.familial_connections_become_heir,
+            "heir_minimum_age": self.heir_minimum_age,
+            "keep_existing_heir": self.keep_existing_heir,
+
+            "outcast_minimum_age": self.outcast_minimum_age,
+
             "minimum_rel_heir_threshold": self.minimum_rel_heir_threshold,
             "maximum_rel_blacksheep_threshold": self.maximum_rel_blacksheep_threshold,
             "minimum_rel_removeblacksheep_threshold": self.minimum_rel_removeblacksheep_threshold,
 
             "minimum_rel_nobleinherit_threshold": self.minimum_rel_nobleinherit_threshold,
+            "nobleinherit_minimum_age": self.nobleinherit_minimum_age,
+            "nobleinherit_career_req": self.nobleinherit_career_req,
 
             "add_dynasty_children": self.add_dynasty_children,
             "add_dynasty_spouse": self.add_dynasty_spouse,
@@ -157,12 +178,21 @@ class GlobalSettings:
         self.automatic_remove_rivalries = data.get("automatic_remove_rivalries", True)
 
         self.enforce_dynasty_name = data.get("enforce_dynasty_name", False)
+        
+        self.heir_gender_priority = data.get("heir_gender_priority", "none")
+        self.familial_connections_become_heir = data.get("familial_connections_become_heir", ["children","spouse","siblings","parents"])
+        self.heir_minimum_age = data.get("heir_minimum_age", "BABY")
+        self.keep_existing_heir = data.get("keep_existing_heir", True)
+
+        self.outcast_minimum_age = data.get("outcast_minimum_age", Age.CHILD)
 
         self.minimum_rel_heir_threshold = data.get("minimum_rel_heir_threshold", 10)
         self.maximum_rel_blacksheep_threshold = data.get("maximum_rel_blacksheep_threshold", -60)
         self.minimum_rel_removeblacksheep_threshold = data.get("minimum_rel_removeblacksheep_threshold", 0)
 
         self.minimum_rel_nobleinherit_threshold = data.get("minimum_rel_nobleinherit_threshold", 0)
+        self.nobleinherit_minimum_age = data.get("nobleinherit_minimum_age", Age.TEEN)
+        self.nobleinherit_career_req = data.get("nobleinherit_career_req", "all")
 
         self.add_dynasty_children = data.get("add_dynasty_children", "headheir")
         self.add_dynasty_spouse = data.get("add_dynasty_spouse", "headheir")
@@ -191,7 +221,7 @@ class GlobalSettings:
 
             self.apply_dict(data)
             debug_log(f"Loaded settings: {data}")
-
+            self.save()
         except Exception as ex:
             debug_log(f"Failed to load settings: {ex}")
 

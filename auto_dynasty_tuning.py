@@ -22,6 +22,8 @@ MOD_SA_IDS = {
 
     "openGlobalNobleInheritanceEnabler_SA": 11298748893984418377,
     "openNobleInheritanceRelThresholdPicker_SA": 15602580910547423574,
+    "openNobleInheritanceMinimumAgePicker_SA": 5111921182813158876,
+    "openNobleInheritanceCareerReqsPicker_SA": 16571879572354402061,
 
     "openEnforceDynastyName_SA": 5021125578673096937,
 
@@ -36,11 +38,16 @@ MOD_SA_IDS = {
     "openDynastyHeirSub_SA": 4095023956375673512,
     "openGlobalDynastyHeirEnabler_SA": 564242234709985375,
     "openDynastyHeirRelThresholdPicker_SA": 15835642838527574006,
+    "openDynastyHeirFamilialConnectionPicker_SA": 16384167216283077623,
+    "openDynastyHeirGenderPriorityPicker_SA": 3781169433286291743,
+    "openDynastyHeirMinimumAgePicker_SA": 16553777939132853149,
+    "openDynastyHeirKeepExistingEnabler_SA": 16656976747516397654,
 
     "openDynastyBlackSheepSub_SA": 8851396749071259894,
     "openGlobalDynastyOutcastEnabler_SA": 12499293592649829330,
     "openDynastyDelcareOutcastRelThresholdPicker_SA": 8940125178568154422,
     "openDynastyRevokeOutcastRelThresholdPicker_SA": 17855539998382457840,
+    "openDynastyBlackSheepMinimumAgePicker_SA": 10614602665684531156,
 
     "openDynastyRelationsSub_SA": 937861700694428407,
     "openGlobalDynastyRelationsEnabler_SA": 12918482440665004436,

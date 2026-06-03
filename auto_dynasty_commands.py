@@ -4,6 +4,7 @@ import traceback
 # *Sims 4 Modules*
 import sims4.commands
 from server_commands.argument_helpers import OptionalSimInfoParam, get_optional_target
+from sims.sim_info_types import Age
 
 from .ui.auto_dynasty_uidialogs import show_text_input_dialog, show_item_picker_dialog
 from .utils.debug_logger import debug_log
@@ -182,3 +183,446 @@ def dynasty_open_settings_headheirmember_picker(setting_name: str = "", sa_key: 
             show_item_setting_picker(sim_info,rows,on_setting_change,title_key,text_key)
     except:
         debug_log("EXCEPTION in uwaepo.dynastymod_open_settings_headheirmember_picker command:\n" + traceback.format_exc())
+
+
+@sims4.commands.Command(
+    'uwaepo.dynastymod_open_settings_dynastyfamilialrelation_picker',
+    command_type=sims4.commands.CommandType.Live
+)
+def dynasty_open_settings_dynastyfamilialrelation_picker(setting_name: str = "", sa_key: str = "", parent_sa_key: str = "", title_key: str = "", text_key: str = "", opt_sim: OptionalSimInfoParam = None, _connection=None):
+    debug_log("COMMMAND: uwaepo.dynasty_open_settings_dynastyfamilialrelation_picker fired")
+    try:
+        sa_id = MOD_SA_IDS.get(sa_key)
+        parent_sa_id = MOD_SA_IDS.get(parent_sa_key)
+
+        try:
+            title_key = int(title_key,0)
+            text_key = int(text_key,0)
+        except ValueError:
+            return
+
+        sim_info = get_optional_target(opt_sim, target_type=OptionalSimInfoParam, _connection=_connection)
+        if sim_info is None:
+            debug_log("[AutoDynastyMod] No SimInfo found.", _connection)
+            return False
+
+        sim = sim_info.get_sim_instance()
+    
+        if not sim:
+            return
+
+        if (sa_id is not None or parent_sa_id is not None):
+
+            def on_setting_change(dialog_instance):
+                if not dialog_instance.accepted:
+                    push_sa(sim,parent_sa_id)
+                    return
+
+                result_tags = dialog_instance.get_result_tags()
+
+                if "goback" in result_tags:
+                    push_sa(sim,parent_sa_id)
+                    return
+                    
+                new_setting = getattr(SETTINGS,setting_name,[])
+                
+                for tag in result_tags:
+                    if tag in new_setting:
+                        new_setting.remove(tag)
+                    else:
+                        new_setting.append(tag)
+
+                if new_setting is not None:
+                    debug_log(f"CHANGING SETTING")
+                    setattr(SETTINGS,setting_name,new_setting)
+                    SETTINGS.save()
+                
+                push_sa(sim,sa_id)
+            
+            rows=[
+                {
+                    "name_key": 0xCB5E673E, # Children
+                    "tag": "children",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if "children" in getattr(SETTINGS,setting_name,None) else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0x7FDD62ED, # Spouses
+                    "tag": "spouse",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if "spouse" in getattr(SETTINGS,setting_name,None) else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0x6E6E8B3A, # Siblings
+                    "tag": "siblings",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if "siblings" in getattr(SETTINGS,setting_name,None) else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0xF403E269, # Parents
+                    "tag": "parents",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if "parents" in getattr(SETTINGS,setting_name,None) else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0xDDC3EC7E, # Go back
+                    "tag": "goback",
+                    "is_enable": True,
+                    "icon": GO_BACK_ICON
+                }
+            ]
+            
+            show_item_setting_picker(sim_info,rows,on_setting_change,title_key,text_key)
+    except:
+        debug_log("EXCEPTION in uwaepo.dynasty_open_settings_dynastyfamilialrelation_picker command:\n" + traceback.format_exc())
+
+
+@sims4.commands.Command(
+    'uwaepo.dynastymod_open_settings_heirgenderpriority_picker',
+    command_type=sims4.commands.CommandType.Live
+)
+def dynasty_open_settings_heirgenderpriority_picker(setting_name: str = "", sa_key: str = "", parent_sa_key: str = "", title_key: str = "", text_key: str = "", opt_sim: OptionalSimInfoParam = None, _connection=None):
+    debug_log("COMMMAND: uwaepo.dynasty_open_settings_heirgenderpriority_picker fired")
+    try:
+        sa_id = MOD_SA_IDS.get(sa_key)
+        parent_sa_id = MOD_SA_IDS.get(parent_sa_key)
+
+        try:
+            title_key = int(title_key,0)
+            text_key = int(text_key,0)
+        except ValueError:
+            return
+
+        sim_info = get_optional_target(opt_sim, target_type=OptionalSimInfoParam, _connection=_connection)
+        if sim_info is None:
+            debug_log("[AutoDynastyMod] No SimInfo found.", _connection)
+            return False
+
+        sim = sim_info.get_sim_instance()
+    
+        if not sim:
+            return
+
+        if (sa_id is not None and parent_sa_id is not None):
+
+            def on_setting_change(dialog_instance):
+                if not dialog_instance.accepted:
+                    push_sa(sim,parent_sa_id)
+                    return
+
+                result_tag = dialog_instance.get_single_result_tag()
+                debug_log(f"PICKER RESULT: {result_tag}")
+
+                new_setting = result_tag
+                        
+                if result_tag == "goback":
+                    push_sa(sim,parent_sa_id)
+                    return
+
+                if new_setting is not None:
+                    debug_log(f"CHANGING SETTING")
+                    setattr(SETTINGS,setting_name,new_setting)
+                    SETTINGS.save()
+                push_sa(sim,sa_id)
+
+            rows=[
+                {
+                    "name_key": 0xEE0C505F, # Male
+                    "tag": "MALE",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "MALE" else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0x15E5C270, # Female
+                    "tag": "FEMALE",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "FEMALE" else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0xAA369120, # None
+                    "tag": "none",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "none" else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0xDDC3EC7E, # Go back
+                    "tag": "goback",
+                    "is_enable": True,
+                    "icon": GO_BACK_ICON
+                }
+            ]
+            
+            show_item_setting_picker(sim_info,rows,on_setting_change,title_key,text_key)
+    except:
+        debug_log("EXCEPTION in uwaepo.dynasty_open_settings_heirgenderpriority_picker command:\n" + traceback.format_exc())
+
+
+@sims4.commands.Command(
+    'uwaepo.dynastymod_open_settings_singleage_picker',
+    command_type=sims4.commands.CommandType.Live
+)
+def dynasty_open_settings_singleage_picker(setting_name: str = "", sa_key: str = "", parent_sa_key: str = "", title_key: str = "", text_key: str = "", opt_sim: OptionalSimInfoParam = None, _connection=None):
+    debug_log("COMMMAND: uwaepo.dynasty_open_settings_singleage_picker fired")
+    try:
+        sa_id = MOD_SA_IDS.get(sa_key)
+        parent_sa_id = MOD_SA_IDS.get(parent_sa_key)
+
+        try:
+            title_key = int(title_key,0)
+            text_key = int(text_key,0)
+        except ValueError:
+            return
+
+        sim_info = get_optional_target(opt_sim, target_type=OptionalSimInfoParam, _connection=_connection)
+        if sim_info is None:
+            debug_log("[AutoDynastyMod] No SimInfo found.", _connection)
+            return False
+
+        sim = sim_info.get_sim_instance()
+    
+        if not sim:
+            return
+
+        if (sa_id is not None and parent_sa_id is not None):
+
+            def on_setting_change(dialog_instance):
+                if not dialog_instance.accepted:
+                    push_sa(sim,parent_sa_id)
+                    return
+
+                result_tag = dialog_instance.get_single_result_tag()
+                debug_log(f"PICKER RESULT: {result_tag}")
+
+                new_setting = result_tag
+                        
+                if result_tag == "goback":
+                    push_sa(sim,parent_sa_id)
+                    return
+
+                if new_setting is not None:
+                    debug_log(f"CHANGING SETTING")
+                    setattr(SETTINGS,setting_name,new_setting)
+                    SETTINGS.save()
+                push_sa(sim,sa_id)
+
+            rows=[
+                {
+                    "name_key": 0x71AA5750, # Baby
+                    "tag": "BABY",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "BABY" else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0xADDA7C5E, # Infant
+                    "tag": "INFANT",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "INFANT" else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0xC131542D, # Toddler
+                    "tag": "TODDLER",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "TODDLER" else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0x2135D048, # Child
+                    "tag": "CHILD",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "CHILD" else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0x9F66F27C, # Teen
+                    "tag": "TEEN",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "TEEN" else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0xD2DC11B3, # Young Adult
+                    "tag": "YOUNGADULT",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "YOUNGADULT" else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0xF54C0CD8, # Adult
+                    "tag": "ADULT",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "ADULT" else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0x0C48C339, # Elder
+                    "tag": "ELDER",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "ELDER" else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0xDDC3EC7E, # Go back
+                    "tag": "goback",
+                    "is_enable": True,
+                    "icon": GO_BACK_ICON
+                }
+            ]
+            
+            show_item_setting_picker(sim_info,rows,on_setting_change,title_key,text_key)
+    except:
+        debug_log("EXCEPTION in uwaepo.dynasty_open_settings_singleage_picker command:\n" + traceback.format_exc())
+
+
+@sims4.commands.Command(
+    'uwaepo.dynastymod_open_settings_singleage_minage_picker',
+    command_type=sims4.commands.CommandType.Live
+)
+def dynasty_open_settings_singleage_minage_picker(setting_name: str = "", sa_key: str = "", parent_sa_key: str = "", minimum_age_name: str = "BABY", title_key: str = "", text_key: str = "", opt_sim: OptionalSimInfoParam = None, _connection=None):
+    debug_log("COMMMAND: uwaepo.dynasty_open_settings_singleage_minage_picker fired")
+    try:
+        sa_id = MOD_SA_IDS.get(sa_key)
+        parent_sa_id = MOD_SA_IDS.get(parent_sa_key)
+
+        minimum_age = getattr(Age,minimum_age_name,Age.BABY)
+
+        try:
+            title_key = int(title_key,0)
+            text_key = int(text_key,0)
+        except ValueError:
+            return
+
+        sim_info = get_optional_target(opt_sim, target_type=OptionalSimInfoParam, _connection=_connection)
+        if sim_info is None:
+            debug_log("[AutoDynastyMod] No SimInfo found.", _connection)
+            return False
+
+        sim = sim_info.get_sim_instance()
+    
+        if not sim:
+            return
+
+        if (sa_id is not None and parent_sa_id is not None):
+
+            def on_setting_change(dialog_instance):
+                if not dialog_instance.accepted:
+                    push_sa(sim,parent_sa_id)
+                    return
+
+                result_tag = dialog_instance.get_single_result_tag()
+                debug_log(f"PICKER RESULT: {result_tag}")
+
+                new_setting = result_tag
+                        
+                if result_tag == "goback":
+                    push_sa(sim,parent_sa_id)
+                    return
+
+                if new_setting is not None:
+                    debug_log(f"CHANGING SETTING")
+                    setattr(SETTINGS,setting_name,new_setting)
+                    SETTINGS.save()
+                push_sa(sim,sa_id)
+
+            AGE_STBL_MAP = {Age.BABY: 0x71AA5750, Age.INFANT: 0xADDA7C5E, Age.TODDLER: 0xC131542D, Age.CHILD: 0x2135D048, Age.TEEN: 0x9F66F27C, Age.YOUNGADULT: 0xD2DC11B3, Age.ADULT: 0xF54C0CD8, Age.ELDER: 0x0C48C339}
+
+            rows=[]
+
+            for age_enum in Age:
+                if age_enum.sequential_value >= minimum_age.sequential_value:
+                    rows.append(
+                        {
+                            "name_key": AGE_STBL_MAP.get(age_enum,0x71AA5750),
+                            "tag": age_enum,
+                            "is_enable": True,
+                            "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == age_enum else UNSELECTED_ICON
+                        }
+                    )
+
+            rows.append(
+                {
+                    "name_key": 0xDDC3EC7E, # Go back
+                    "tag": "goback",
+                    "is_enable": True,
+                    "icon": GO_BACK_ICON
+                }
+            )
+
+            debug_log(rows)
+            
+            show_item_setting_picker(sim_info,rows,on_setting_change,title_key,text_key)
+    except:
+        debug_log("EXCEPTION in uwaepo.dynasty_open_settings_singleage_minage_picker command:\n" + traceback.format_exc())
+
+
+@sims4.commands.Command(
+    'uwaepo.dynastymod_open_settings_nobleinherit_careerreqs_picker',
+    command_type=sims4.commands.CommandType.Live
+)
+def dynasty_open_settings_nobleinherit_careerreqs_picker(setting_name: str = "", sa_key: str = "", parent_sa_key: str = "", title_key: str = "", text_key: str = "", opt_sim: OptionalSimInfoParam = None, _connection=None):
+    debug_log("COMMMAND: uwaepo.dynasty_open_settings_nobleinherit_careerreqs_picker fired")
+    try:
+        sa_id = MOD_SA_IDS.get(sa_key)
+        parent_sa_id = MOD_SA_IDS.get(parent_sa_key)
+
+        try:
+            title_key = int(title_key,0)
+            text_key = int(text_key,0)
+        except ValueError:
+            return
+
+        sim_info = get_optional_target(opt_sim, target_type=OptionalSimInfoParam, _connection=_connection)
+        if sim_info is None:
+            debug_log("[AutoDynastyMod] No SimInfo found.", _connection)
+            return False
+
+        sim = sim_info.get_sim_instance()
+    
+        if not sim:
+            return
+
+        if (sa_id is not None and parent_sa_id is not None):
+
+            def on_setting_change(dialog_instance):
+                if not dialog_instance.accepted:
+                    push_sa(sim,parent_sa_id)
+                    return
+
+                result_tag = dialog_instance.get_single_result_tag()
+                debug_log(f"PICKER RESULT: {result_tag}")
+
+                new_setting = result_tag
+                        
+                if result_tag == "goback":
+                    push_sa(sim,parent_sa_id)
+                    return
+
+                if new_setting is not None:
+                    debug_log(f"CHANGING SETTING")
+                    setattr(SETTINGS,setting_name,new_setting)
+                    SETTINGS.save()
+                push_sa(sim,sa_id)
+
+            rows=[
+                {
+                    "name_key": 0xF2611A8D, # Unemployed Sims Only
+                    "tag": "unemployedonly",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "unemployedonly" else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0x0339D508, # Prioritise Unemployed Sims
+                    "tag": "priotisedunemployed",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "priotisedunemployed" else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0x10932571, # No Career Prioritisation
+                    "tag": "all",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "all" else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0xDDC3EC7E, # Go back
+                    "tag": "goback",
+                    "is_enable": True,
+                    "icon": GO_BACK_ICON
+                }
+            ]
+            
+            show_item_setting_picker(sim_info,rows,on_setting_change,title_key,text_key)
+    except:
+        debug_log("EXCEPTION in uwaepo.dynasty_open_settings_nobleinherit_careerreqs_picker command:\n" + traceback.format_exc())

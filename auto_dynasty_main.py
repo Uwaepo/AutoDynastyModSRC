@@ -8,7 +8,7 @@ import sims4.resources
 from careers.career_enums import CareerCategory
 from careers.career_tracker import CareerTracker
 
-from dynasty.dynasty import Dynasty
+from dynasty.dynasty import Dynasty, DynastyMessageType
 from dynasty.dynasty_service import DynastyService
 from dynasty.dynasty_tunings import DynastyTunables
 
@@ -23,7 +23,7 @@ from kingdom.kingdom_tuning import KingdomTuning
 
 from sims.genealogy_tracker import GenealogyTracker
 from sims.sim_info import SimInfo
-from sims.sim_info_types import Age
+from sims.sim_info_types import Age, Gender
 
 from relationships.relationship_tracker import RelationshipTracker
 
@@ -93,13 +93,10 @@ def _set_sim_as_noble_successor(noble_sim_info: SimInfo,inheriting_sim_info: Sim
     noble_neighborhood_id = kingdom_service.get_sim_neighborhood_id(noble_sim_info)
     inherit_neighborhood_id = kingdom_service.get_sim_neighborhood_id(inheriting_sim_info)
 
-    if noble_neighborhood_id is None or noble_neighborhood_id is not inherit_neighborhood_id:
+    if noble_neighborhood_id is None or noble_neighborhood_id != inherit_neighborhood_id:
         return
-    
-    kingdom_data = kingdom_service.get_or_create_neighborhood_data(noble_neighborhood_id)
-    sim_data = kingdom_service.get_sim_data(kingdom_data, noble_sim_info.id)
 
-    if kingdom_service.has_noble_career(noble_sim_info) and noble_sim_info != inheriting_sim_info and sim_data:
+    if kingdom_service.has_noble_career(noble_sim_info) and noble_sim_info != inheriting_sim_info:
         debug_log(f"Setting {inheriting_sim_info.first_name} {inheriting_sim_info.last_name} as {noble_sim_info.first_name} {noble_sim_info.last_name}'s noble successor.")
         kingdom_service.set_inheriting_sim(noble_sim_info,inheriting_sim_info)
                 
@@ -107,7 +104,7 @@ def _set_sim_as_noble_successor(noble_sim_info: SimInfo,inheriting_sim_info: Sim
 # Function Name: _remove_fulltime_careers()
 # Description: Removes all full time careers from a sim, which would conflict with the Noble career.
 def _remove_fulltime_careers(sim_info: SimInfo) -> bool:
-    career_tracker = services.sim_info_manager().get(sim_info.id).career_tracker
+    career_tracker = sim_info.career_tracker
 
     if career_tracker is None:
         return False
@@ -205,13 +202,6 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
     if _is_dynasty_played(dynasty)  == True:
         return
 
-    # Checking if old heir qualifies to be heir still.
-    if old_heir_sim_info is not None:
-        headheir_rel = head_sim_info.relationship_tracker.get_relationship_score(old_heir_sim_info.id)
-        
-        if headheir_rel >= SETTINGS.minimum_rel_heir_threshold: 
-            return
-
     chosen_heir_sim_info = None
 
     # Checks if a sim qualifies to be heir by their SimInfo.
@@ -223,19 +213,36 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
         
         if is_black_sheep and not should_be_black_sheep(target_sim_info):
             dynasty.set_black_sheep(target_sim_info,negate=True,update_client=True)
+
+        minimum_age = Age(SETTINGS.heir_minimum_age)
         
         headchild_rel = head_sim_info.relationship_tracker.get_relationship_score(target_sim_info.id)
-        return not headchild_rel <= SETTINGS.minimum_rel_heir_threshold and not target_sim_info.has_trait(DynastyTunables.BLACK_SHEEP_TRAIT) and not target_sim_info.is_dead and (target_sim_info.id in dynasty.get_members())
+        return not headchild_rel <= SETTINGS.minimum_rel_heir_threshold and not target_sim_info.has_trait(DynastyTunables.BLACK_SHEEP_TRAIT) and not target_sim_info.is_dead and (target_sim_info.id in dynasty.get_members()) and minimum_age.sequential_value <= target_sim_info.age.sequential_value
 
     head_children_sim_infos = _order_relative_list(list(head_sim_info.genealogy.get_children_sim_ids_gen()))
 
+    # Checking if old heir qualifies to be heir still.
+    if old_heir_sim_info is not None and SETTINGS.keep_existing_heir:
+        if _can_be_heir(old_heir_sim_info):
+            return
+
     # Checking children.
-    for child_sim_info in head_children_sim_infos:
-        if _can_be_heir(child_sim_info):
-            chosen_heir_sim_info = child_sim_info
+    if "children" in SETTINGS.familial_connections_become_heir:
+        for child_sim_info in head_children_sim_infos:
+            if _can_be_heir(child_sim_info):
+                priority_gender = getattr(Gender,SETTINGS.heir_gender_priority,child_sim_info.gender)
+
+                if child_sim_info.gender == priority_gender:
+                    if chosen_heir_sim_info is not None:
+                        if chosen_heir_sim_info.gender != priority_gender:
+                            chosen_heir_sim_info = child_sim_info
+                
+                if chosen_heir_sim_info is None:
+                    chosen_heir_sim_info = child_sim_info
+
 
     # Checking spouse.
-    if chosen_heir_sim_info is None:
+    if chosen_heir_sim_info is None and "spouse" in SETTINGS.familial_connections_become_heir:
         head_spouse_sim_id = head_sim_info.spouse_sim_id
         if head_spouse_sim_id is not None:
             head_spouse_sim_info = services.sim_info_manager().get(head_spouse_sim_id)
@@ -244,25 +251,47 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
                 chosen_heir_sim_info = head_spouse_sim_info
 
     # Checking siblings.
-    if chosen_heir_sim_info is None:
+    if chosen_heir_sim_info is None and "siblings" in SETTINGS.familial_connections_become_heir:
         head_siblings_sim_infos = _order_relative_list(list(head_sim_info.genealogy.get_siblings_sim_ids_gen()))
 
         for sibling_sim_info in head_siblings_sim_infos:
             if _can_be_heir(sibling_sim_info):
-                chosen_heir_sim_info = sibling_sim_info
+                priority_gender = getattr(Gender,SETTINGS.heir_gender_priority,sibling_sim_info.gender)
+
+                if sibling_sim_info.gender == priority_gender:
+                    if chosen_heir_sim_info is not None:
+                        if chosen_heir_sim_info.gender != priority_gender:
+                            chosen_heir_sim_info = sibling_sim_info
+
+                if chosen_heir_sim_info is None:
+                    chosen_heir_sim_info = sibling_sim_info
 
     # Checking parents.
-    if chosen_heir_sim_info is None:
+    if chosen_heir_sim_info is None and "parents" in SETTINGS.familial_connections_become_heir:
         head_parents_sim_infos = _order_relative_list(list(head_sim_info.genealogy.get_parent_sim_ids_gen()))
 
         for parent_sim_info in head_parents_sim_infos:
             if _can_be_heir(parent_sim_info):
-                chosen_heir_sim_info = parent_sim_info
+                priority_gender = getattr(Gender,SETTINGS.heir_gender_priority,parent_sim_info.gender)
+
+                if parent_sim_info.gender == priority_gender:
+                    if chosen_heir_sim_info is not None:
+                        if chosen_heir_sim_info.gender != priority_gender:
+                            chosen_heir_sim_info = parent_sim_info
+
+                if chosen_heir_sim_info is None:
+                    chosen_heir_sim_info = parent_sim_info
+
+    old_heir_sim_info = dynasty.get_heir_sim_info()
 
     # Setting as heir if a qualifying sim is found.
-    if chosen_heir_sim_info is not None:
-        dynasty.set_heir(chosen_heir_sim_info.id,update_client=True)
-
+    if chosen_heir_sim_info is not None and old_heir_sim_info is not chosen_heir_sim_info:
+        if old_heir_sim_info is not None:
+            old_heir_sim_info.remove_trait(DynastyTunables.HEIR_TRAIT)
+        dynasty._heir_sim_id = chosen_heir_sim_info.id
+        dynasty.distribute_dynasty_msg(DynastyMessageType.UPDATE)
+        chosen_heir_sim_info.add_trait(DynastyTunables.HEIR_TRAIT)
+        
 
 # Function Name: _calculate_noble_successor()
 # Description: Calculates the most suitable sim to become a noble sim's successor.
@@ -302,10 +331,70 @@ def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
         if kingdom_service.has_noble_career(target_sim_info):
             if kingdom_service.get_noble_career_level(target_sim_info.id) >= kingdom_service.get_noble_career_level(noble_sim_info.id):
                 lower_noble_rank = False
+
+        minimum_age = Age(SETTINGS.nobleinherit_minimum_age)
         
         headchild_rel = noble_sim_info.relationship_tracker.get_relationship_score(target_sim_info.id)
-        return not headchild_rel < SETTINGS.minimum_rel_nobleinherit_threshold and not target_sim_info.is_dead and kingdom_service.get_sim_neighborhood_id(noble_sim_info) == kingdom_service.get_sim_neighborhood_id(target_sim_info) and target_sim_info.age >= Age.TEEN and lower_noble_rank
-    
+
+        debug_log("SIM CHECK FOR INHERITANCE")
+        debug_log(f"Sim Name: {target_sim_info.first_name} {target_sim_info.last_name}")
+        debug_log(f"Meets Rel Needs: {not headchild_rel < SETTINGS.minimum_rel_nobleinherit_threshold}")
+        debug_log(f"Is Dead: {target_sim_info.is_dead}")
+        debug_log(f"Lives in same neighbourhood: {kingdom_service.get_sim_neighborhood_id(noble_sim_info) == kingdom_service.get_sim_neighborhood_id(target_sim_info)}")
+        debug_log(f"Meets age requirement: {minimum_age.sequential_value <= target_sim_info.age.sequential_value}")
+        debug_log(f"Lower noble rank: {lower_noble_rank}")
+
+        return not headchild_rel < SETTINGS.minimum_rel_nobleinherit_threshold and not target_sim_info.is_dead and kingdom_service.get_sim_neighborhood_id(noble_sim_info) == kingdom_service.get_sim_neighborhood_id(target_sim_info) and minimum_age.sequential_value <= target_sim_info.age.sequential_value and lower_noble_rank
+
+    def _meets_career_reqs(target_sim_info: SimInfo) -> bool:
+        if target_sim_info is None:
+            return False
+
+        career_tracker = target_sim_info.career_tracker
+
+        if career_tracker is None:
+            return False
+
+        has_work_career = False
+        for career_uid, career in career_tracker.careers.items():
+            if career.career_category == CareerCategory.Work:
+                has_work_career = True
+                break
+
+        if SETTINGS.nobleinherit_career_req == "unemployedonly":
+            if has_work_career:
+                return False
+        elif SETTINGS.nobleinherit_career_req == "priotisedunemployed":
+            curr_inheriter_unemployed = noble_successor_sim_info is not None
+
+            debug_log("NOBLE CAREER CHECKS")
+            debug_log(f"Check sim: {target_sim_info.first_name} {target_sim_info.last_name}")
+            debug_log(f"Sims has job: {has_work_career}")
+
+            if curr_inheriter_unemployed:
+                inheriter_career_tracker = noble_successor_sim_info.career_tracker
+
+                if inheriter_career_tracker is not None:
+                    for career_uid, career in inheriter_career_tracker.careers.items():
+                        if career.career_category == CareerCategory.Work:
+                            curr_inheriter_unemployed = False
+                            break
+            
+                debug_log(f"Current chosen successor: {noble_successor_sim_info.first_name} {noble_successor_sim_info.last_name}")
+                debug_log(f"Chosen successor has job: {not curr_inheriter_unemployed}")
+
+
+            if curr_inheriter_unemployed:
+                return False
+            elif has_work_career and noble_successor_sim_info is not None:
+                return False
+        elif SETTINGS.nobleinherit_career_req == "all":
+            if noble_successor_sim_info is not None:
+                return False
+
+        return True
+
+
     noble_dynasty = _get_sim_dynasty(noble_sim_info)
     
     noble_children_sim_infos = _order_relative_list(list(noble_sim_info.genealogy.get_children_sim_ids_gen()))
@@ -315,14 +404,13 @@ def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
         if noble_dynasty.get_head_sim_info() == noble_sim_info:
             heir_sim_info = noble_dynasty.get_heir_sim_info()
             if heir_sim_info is not None:
-                if (heir_sim_info in noble_children_sim_infos or heir_sim_info.id == noble_sim_info.spouse_sim_id) and _can_be_successor(heir_sim_info):
+                if (heir_sim_info in noble_children_sim_infos or heir_sim_info.id == noble_sim_info.spouse_sim_id) and _can_be_successor(heir_sim_info) and _meets_career_reqs(heir_sim_info):
                     noble_successor_sim_info = heir_sim_info
 
-    # Checking children.
-    if noble_successor_sim_info is None:                                  
-        for child_sim_info in noble_children_sim_infos:
-            if _can_be_successor(child_sim_info):
-                noble_successor_sim_info = child_sim_info
+    # Checking children.                              
+    for child_sim_info in noble_children_sim_infos:
+        if _can_be_successor(child_sim_info) and _meets_career_reqs(child_sim_info):
+            noble_successor_sim_info = child_sim_info
 
     # Checking spouses.
     if noble_successor_sim_info is None:
@@ -331,7 +419,7 @@ def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
         if noble_spouse_sim_id is not None:
             noble_spouse_sim_info = services.sim_info_manager().get(noble_spouse_sim_id)
 
-            if _can_be_successor(noble_spouse_sim_info):
+            if _can_be_successor(noble_spouse_sim_info) and _meets_career_reqs(noble_spouse_sim_info):
                 noble_successor_sim_info = noble_spouse_sim_info
 
     # Setting as successor if a qualifying sim is found.
@@ -369,9 +457,9 @@ def _calculate_dynasty_black_sheeps(dynasty) -> None:
 
         is_black_sheep = member_sim_info.has_trait(DynastyTunables.BLACK_SHEEP_TRAIT)
 
-        if is_black_sheep and headmember_rel > SETTINGS.minimum_rel_removeblacksheep_threshold:
+        if is_black_sheep and (headmember_rel > SETTINGS.minimum_rel_removeblacksheep_threshold or Age(SETTINGS.outcast_minimum_age).sequential_value > member_sim_info.age.sequential_value):
             dynasty.set_black_sheep(member_sim_info,negate=True,update_client=True)
-        elif not is_black_sheep and headmember_rel <= SETTINGS.maximum_rel_blacksheep_threshold:
+        elif not is_black_sheep and headmember_rel <= SETTINGS.maximum_rel_blacksheep_threshold and Age(SETTINGS.outcast_minimum_age).sequential_value <= member_sim_info.age.sequential_value:
             dynasty.set_black_sheep(member_sim_info,negate=False,update_client=True)
 
 
@@ -931,7 +1019,7 @@ def _hook_deathtracker_set_death_type(original, self, *args, **kwargs):
 
             debug_log(f"Is Noble: {is_noble}")
             
-            if dying_sim_info.household.is_player_household != True and is_noble == True:
+            if dying_sim_info.household.is_player_household is not True and is_noble == True:
                 _calculate_noble_successor(dying_sim_info)
     except:
         debug_log("EXCEPTION in DeathTracker.set_death_type hook:\n" + traceback.format_exc())
