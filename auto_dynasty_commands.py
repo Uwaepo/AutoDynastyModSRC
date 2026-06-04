@@ -513,7 +513,7 @@ def dynasty_open_settings_singleage_minage_picker(setting_name: str = "", sa_key
 
                 if new_setting is not None:
                     debug_log(f"CHANGING SETTING")
-                    setattr(SETTINGS,setting_name,new_setting)
+                    setattr(SETTINGS,setting_name,int(new_setting))
                     SETTINGS.save()
                 push_sa(sim,sa_id)
 

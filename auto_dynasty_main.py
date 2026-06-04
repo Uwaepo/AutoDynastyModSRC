@@ -96,9 +96,12 @@ def _set_sim_as_noble_successor(noble_sim_info: SimInfo,inheriting_sim_info: Sim
     if noble_neighborhood_id is None or noble_neighborhood_id != inherit_neighborhood_id:
         return
 
-    if kingdom_service.has_noble_career(noble_sim_info) and noble_sim_info != inheriting_sim_info:
-        debug_log(f"Setting {inheriting_sim_info.first_name} {inheriting_sim_info.last_name} as {noble_sim_info.first_name} {noble_sim_info.last_name}'s noble successor.")
-        kingdom_service.set_inheriting_sim(noble_sim_info,inheriting_sim_info)
+    kingdom_data = kingdom_service.get_or_create_neighborhood_data(noble_neighborhood_id)
+    if kingdom_data is not None:
+        inherirting_sim_data = kingdom_service.get_sim_data(kingdom_data, inheriting_sim_info.id)
+        if kingdom_service.has_noble_career(noble_sim_info) and noble_sim_info != inheriting_sim_info and inherirting_sim_data is not None:
+            debug_log(f"Setting {inheriting_sim_info.first_name} {inheriting_sim_info.last_name} as {noble_sim_info.first_name} {noble_sim_info.last_name}'s noble successor.")
+            kingdom_service.set_inheriting_sim(noble_sim_info,inheriting_sim_info)
                 
 
 # Function Name: _remove_fulltime_careers()
@@ -880,9 +883,6 @@ def _hook_relationship_tracker_add_relationship_bit(original, self, target_sim_i
             sim_dynasty = _get_sim_dynasty(sim_info)
             target_dynasty = _get_sim_dynasty(target_sim_info)
             if sim_dynasty is not None:
-                if sim_info.relationship_tracker.has_bit(target_sim_id, RelationshipGlobalTuning.MARRIAGE_RELATIONSHIP_BIT) and sim_dynasty is not target_dynasty:
-                    _on_sim_marriage(sim_info,target_sim_info)
-
                 if sim_dynasty is target_dynasty:
                     _calculate_dynasty_heir(sim_dynasty)
                     _calculate_dynasty_black_sheeps(sim_dynasty)
@@ -1049,5 +1049,24 @@ def _hook_careertracker_add_career(original, self, *args, **kwargs):
                 _calculate_noble_successor(sim_info)
     except:
         debug_log("EXCEPTION in CareerTracker.add_career hook:\n" + traceback.format_exc())
+        
+    return result
+
+# Runs when the spouse event if fired.
+# Used to detect marriages to add spouses to dynasties as appropriate.
+@inject_to(KingdomService, "handle_spouse_event")
+def _hook_kingdom_service_handle_spouse_eventr(original, self, sim_info, resolver, *args, **kwargs):
+    debug_log("HOOK: KingdomService.handle_spouse_event fired")
+    result = original(self, sim_info, resolver, *args, **kwargs)
+    try:
+        debug_log("KINGDOM SERVICE SPOUSE EVENT")
+        debug_log(f"Sim: {sim_info.first_name} {sim_info.last_name}")
+        spouse_sim_id = resolver.event_kwargs['spouse_sim_id']
+        ex_spouse_sim_id = resolver.event_kwargs['ex_spouse_sim_id']
+        spouse_sim_info = services.sim_info_manager().get(spouse_sim_id) if spouse_sim_id else services.sim_info_manager().get(ex_spouse_sim_id)
+        debug_log(f"Spouse Sim: {spouse_sim_info.first_name} {spouse_sim_info.last_name}")
+        _on_sim_marriage(sim_info,spouse_sim_info)
+    except:
+        debug_log("EXCEPTION in KingdomService.handle_spouse_event hook:\n" + traceback.format_exc())
         
     return result
