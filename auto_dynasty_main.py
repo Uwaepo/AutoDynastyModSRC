@@ -8,6 +8,8 @@ import sims4.resources
 from careers.career_enums import CareerCategory
 from careers.career_tracker import CareerTracker
 
+from cas.cas import get_caspart_bodytype
+
 from dynasty.dynasty import Dynasty, DynastyMessageType
 from dynasty.dynasty_service import DynastyService
 from dynasty.dynasty_tunings import DynastyTunables
@@ -22,6 +24,7 @@ from kingdom.kingdom_service import KingdomService
 from kingdom.kingdom_tuning import KingdomTuning
 
 from sims.genealogy_tracker import GenealogyTracker
+from sims.outfits.outfit_enums import BodyType, OutfitCategory
 from sims.sim_info import SimInfo
 from sims.sim_info_types import Age, Gender
 
@@ -1059,6 +1062,8 @@ def _hook_kingdom_service_handle_spouse_eventr(original, self, sim_info, resolve
     debug_log("HOOK: KingdomService.handle_spouse_event fired")
     result = original(self, sim_info, resolver, *args, **kwargs)
     try:
+        kingdom_service = services.kingdom_service()
+
         debug_log("KINGDOM SERVICE SPOUSE EVENT")
         debug_log(f"Sim: {sim_info.first_name} {sim_info.last_name}")
         spouse_sim_id = resolver.event_kwargs['spouse_sim_id']

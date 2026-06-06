@@ -101,8 +101,19 @@ class GlobalSettings:
             None
         )
 
-        if os.path.exists(script_file):
+        if script_file is not None:
             config_folder = script_file.parent
+        else:
+            config_file = next(
+                (
+                    file for file in config_folder.rglob("*.cfg")
+                    if file.name.replace("[","").replace("]","") == constants.CONFIG_FILE_NAME.replace("[","").replace("]","")
+                ),
+                None
+            )
+
+            if config_file is not None:
+                config_folder = config_file.parent
 
         config_folder.mkdir(parents=True, exist_ok=True)
 
@@ -235,7 +246,6 @@ class GlobalSettings:
         path = self.get_file_path()
 
         if not os.path.exists(path):
-            
             debug_log(f"Config not found, creating default at {path}")
             self.save()
             return
