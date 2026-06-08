@@ -5,6 +5,7 @@ from pathlib import Path
 
 import shutil
 from sims.sim_info_types import Age
+from relationships.relationship_enums import RelationshipType
 
 from . import constants
 from .utils.debug_logger import debug_log
@@ -63,6 +64,15 @@ class GlobalSettings:
         self.maximum_average_rel_new_rival = -20
         self.minimum_head_rel_remove_rival = 10
 
+        # Dynasty Auto Repair
+        self.global_automatic_repair = True
+        self.enable_repair_for_played = False
+        self.enable_repair_for_unplayed = True
+        
+        self.add_which_roles = ["head","heir"]
+        self.whitelist_head_relatives = [int(RelationshipType.DESCENDANT),int(RelationshipType.SPOUSE)] 
+        self.whitelist_heir_relatives = [int(RelationshipType.DESCENDANT),int(RelationshipType.SPOUSE)] 
+        self.whitelist_member_relatives = []
     
     @classmethod
     def migrate_old_config(cls):
@@ -81,10 +91,10 @@ class GlobalSettings:
                 ),
                 None
             )
-            if existing_config:
+            if existing_config is not None:
                 break
 
-        if existing_config:
+        if existing_config is not None:
             cls.load_json(existing_config)
             os.remove(existing_config)
             cls.save(cls)
@@ -167,15 +177,14 @@ class GlobalSettings:
     @classmethod
     def load_json(cls,json_file):
         if not os.path.exists(json_file):
-            debug_log(f"Old JSON file not found, creating default at {path}")
+            debug_log(f"Old JSON file not found")
             return
-
         try:
             with open(json_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             cls.apply_old_json_dict(data)
-            debug_log(f"Loaded settings: {data}")
+            debug_log(f"Loaded old JSON settings: {data}")
         except Exception as ex:
             debug_log(f"Failed to load settings: {ex}")
 
@@ -232,10 +241,20 @@ class GlobalSettings:
             "minimum_head_rel_remove_rival": str(self.minimum_head_rel_remove_rival),
         }
 
+        config["EA Repair"] = {
+            "global_automatic_repair": str(self.global_automatic_repair),
+            "enable_repair_for_played": str(self.enable_repair_for_played),
+            "enable_repair_for_unplayed": str(self.enable_repair_for_unplayed),
+
+            "add_which_roles": ",".join(self.add_which_roles),
+            "whitelist_head_relatives": ",".join(str(x) for x in self.whitelist_head_relatives),
+            "whitelist_heir_relatives": ",".join(str(x) for x in self.whitelist_heir_relatives),
+            "whitelist_member_relatives": ",".join(str(x) for x in self.whitelist_member_relatives),
+        }
+
         try:
             with open(path, "w") as file:
                 config.write(file)
-
             debug_log(f"Saved settings to {path}")
 
         except Exception as ex:
@@ -296,6 +315,14 @@ class GlobalSettings:
             self.maximum_average_rel_new_rival = config.getint("Thresholds", "maximum_average_rel_new_rival", fallback=-20)
             self.minimum_head_rel_remove_rival = config.getint("Thresholds", "minimum_head_rel_remove_rival", fallback=10)
 
+            self.global_automatic_repair = config.getboolean("EA Repair", "global_automatic_repair", fallback=True)
+            self.enable_repair_for_played = config.getboolean("EA Repair", "enable_repair_for_played", fallback=False)
+            self.enable_repair_for_unplayed = config.getboolean("EA Repair", "enable_repair_for_unplayed", fallback=True)
+
+            self.add_which_roles = config.get("EA Repair","add_which_roles",fallback="head,heir").split(",")
+            self.whitelist_head_relatives = [int(x) for x in config.get("EA Repair", "whitelist_head_relatives", fallback="9,12").split(",") if x]
+            self.whitelist_heir_relatives = [int(x) for x in config.get("EA Repair", "whitelist_heir_relatives", fallback="9,12").split(",") if x]
+            self.whitelist_member_relatives = [int(x) for x in config.get("EA Repair", "whitelist_member_relatives", fallback="9,12").split(",") if x]
 
             self.maximum_level_gap_new_ally = config.getint("Dynasty Relations", "maximum_level_gap_new_ally", fallback=3)
 

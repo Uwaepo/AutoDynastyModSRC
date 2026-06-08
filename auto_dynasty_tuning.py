@@ -18,6 +18,7 @@ MOD_SA_IDS = {
     "openGlobalSettings_SA": 4100603253821006077,
     "openDynastySettings_SA": 2277539424149250580,
     "openNobleSettings_SA": 12996693458383374788,
+    "openEARepairSettings_SA": 17147507766577523529,
 
     "openGlobalDynastyModEnabler_SA": 16840106932251952337,
 
@@ -68,6 +69,15 @@ MOD_SA_IDS = {
     "openDynastyRivalryHeadRelThresholdPicker_SA": 14228181524848590843,
     "openDynastyRivalryAvgRelThresholdPicker_SA": 7250669180194868015,
     "openDynastyRemoveRivalryHeadRelThresholdPicker_SA": 6220072595640922719,
+
+    "openGlobalEARepairEnabler_SA": 10063643606427099154,
+    "openPlayedEARepairEnabler_SA": 18309854071735654354,
+    "openUnplayedEARepairEnabler_SA": 15677231443566759425,
+
+    "openEARepairWhichRoles_SA": 999882980638903615,
+    "openEARepairHeadWhitelist_SA": 6758529585397702898,
+    "openEARepairHeirWhitelist_SA": 8237388679642039836,
+    "openEARepairMemberWhitelist_SA": 2515016787012196306,
 }
 
 SA_IDS_TO_INJECT = (

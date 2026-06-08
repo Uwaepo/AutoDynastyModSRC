@@ -8,7 +8,8 @@ import sims4.resources
 from careers.career_enums import CareerCategory
 from careers.career_tracker import CareerTracker
 
-from cas.cas import get_caspart_bodytype
+from protocolbuffers import GameplaySaveData_pb2, DistributorOps_pb2
+from distributor.rollback import ProtocolBufferRollback
 
 from dynasty.dynasty import Dynasty, DynastyMessageType
 from dynasty.dynasty_service import DynastyService
@@ -17,6 +18,7 @@ from dynasty.dynasty_tunings import DynastyTunables
 from event_testing.test_events import TestEvent
 
 from relationships.global_relationship_tuning import RelationshipGlobalTuning
+from relationships.relationship_enums import RelationshipType
 
 from interactions.utils.death import DeathTracker
 
@@ -55,6 +57,14 @@ def _get_sim_dynasty(sim_info: SimInfo) -> Dynasty:
         return None
 
 
+# Function Name: _are_sims_related_or_married()
+# Description: Checks if sim B is related (by 2 layers) to sim A or married.
+def _are_sims_related_or_married(sim_info_a: SimInfo,sim_info_b: SimInfo) -> bool:
+    if sim_info_a is None or sim_info_b is None:
+        return False
+    return services.family_tree_service().are_sims_related(sim_info_a.id, sim_info_b.id, max_search_depth=2) or sim_info_a.spouse_sim_id == sim_info_b.id
+    
+
 # Function Name: _is_dynasty_played()
 # Description: Checks if a dynasty has any played sim members.
 def _is_dynasty_played(dynasty: Dynasty) -> bool:
@@ -79,11 +89,160 @@ def _is_dynasty_played(dynasty: Dynasty) -> bool:
         debug_log("EXCEPTION when checking if dynasty played:\n" + traceback.format_exc())
         return None
 
+def _calculate_sim_for_dynasty(target_sim_info) -> Dynasty:
+    family_tree_service = services.family_tree_service()
 
-# Function Name: _are_sims_related_or_married()
-# Description: Checks if sim B is related (by 2 layers) to sim A or married.
-def _are_sims_related_or_married(sim_info_a: SimInfo,sim_info_b: SimInfo) -> bool:
-    return services.family_tree_service().are_sims_related(sim_info_a.id, sim_info_b.id, max_search_depth=2) or sim_info_a.spouse_sim_id == sim_info_b.id
+    if target_sim_info is None:
+        return
+    
+    viable_dynasties = []
+
+    for dynasty in list(services.dynasty_service()._dynasties.values()):
+        if dynasty is None:
+            continue
+
+        is_played = _is_dynasty_played(dynasty)
+
+        head_sim_info = dynasty.get_head_sim_info()
+
+        if head_sim_info is None or (not SETTINGS.enable_repair_for_played and is_played) or (not SETTINGS.enable_repair_for_unplayed and not is_played):
+            continue
+        
+        children = family_tree_service.get_family_relation_sim_ids(target_sim_info.id,RelationshipType.DESCENDANT)
+        spouses = family_tree_service.get_family_relation_sim_ids(target_sim_info.id,RelationshipType.SPOUSE)
+        siblings = family_tree_service.get_family_relation_sim_ids(target_sim_info.id,RelationshipType.SIBLING)
+        halfsiblings = family_tree_service.get_family_relation_sim_ids(target_sim_info.id,RelationshipType.HALF_SIBLING)
+        parents = family_tree_service.get_family_relation_sim_ids(target_sim_info.id,RelationshipType.PARENT)
+        grandchildren = family_tree_service.get_family_relation_sim_ids(target_sim_info.id,RelationshipType.GRANDCHILD)
+        grandparents = family_tree_service.get_family_relation_sim_ids(target_sim_info.id,RelationshipType.GRANDPARENT)
+        piblings = family_tree_service.get_family_relation_sim_ids(target_sim_info.id,RelationshipType.PARENTS_SIBLING)
+        niblings = family_tree_service.get_family_relation_sim_ids(target_sim_info.id,RelationshipType.SIBLINGS_CHILD)
+        
+        dynasty_viable = False
+
+        heir_sim_info = dynasty.get_heir_sim_info()
+        
+        debug_log(f"HEAD IN SETTINGS {'head' in SETTINGS.add_which_roles}")
+        if _are_sims_related_or_married(head_sim_info,target_sim_info) and "head" in SETTINGS.add_which_roles:
+            if head_sim_info.id in children:
+                # sim is head's parent
+                if int(RelationshipType.PARENT) in SETTINGS.whitelist_head_relatives:
+                    dynasty_viable = True
+            elif head_sim_info.id in spouses:
+                # sim is head's spouse
+                if int(RelationshipType.SPOUSE) in SETTINGS.whitelist_head_relatives:
+                    dynasty_viable = True
+            elif head_sim_info.id in siblings:
+                # sim is head's sibling
+                if int(RelationshipType.SIBLING) in SETTINGS.whitelist_head_relatives:
+                    dynasty_viable = True
+            elif head_sim_info.id in halfsiblings:
+                # sim is head's half-sibling
+                if int(RelationshipType.HALF_SIBLING) in SETTINGS.whitelist_head_relatives:
+                    dynasty_viable = True       
+            elif head_sim_info.id in parents:
+                # sim is head's child
+                if int(RelationshipType.DESCENDANT) in SETTINGS.whitelist_head_relatives:
+                    dynasty_viable = True
+            elif head_sim_info.id in grandchildren:
+                # sim is head's grandparent
+                if int(RelationshipType.GRANDPARENT) in SETTINGS.whitelist_head_relatives:
+                    dynasty_viable = True
+            elif head_sim_info.id in grandparents:
+                # sim is head's grandchild
+                if int(RelationshipType.GRANDCHILD) in SETTINGS.whitelist_head_relatives:
+                    dynasty_viable = True
+            elif head_sim_info.id in piblings:
+                # sim is head's niece/nephew
+                if int(RelationshipType.SIBLINGS_CHILD) in SETTINGS.whitelist_head_relatives:
+                    dynasty_viable = True
+            elif head_sim_info.id in niblings:
+                # sim is head's aunt/uncle.
+                if int(RelationshipType.PARENTS_SIBLING) in SETTINGS.whitelist_head_relatives:
+                    dynasty_viable = True
+        
+        if heir_sim_info is not None:
+            if _are_sims_related_or_married(heir_sim_info,target_sim_info) and "heir" in SETTINGS.add_which_roles and not dynasty_viable:
+                if heir_sim_info.id in children:
+                    if int(RelationshipType.PARENT) in SETTINGS.whitelist_heir_relatives:
+                        dynasty_viable = True
+                elif heir_sim_info.id in spouses:
+                    if int(RelationshipType.SPOUSE) in SETTINGS.whitelist_heir_relatives:
+                        dynasty_viable = True
+                elif heir_sim_info.id in siblings:
+                    if int(RelationshipType.SIBLING) in SETTINGS.whitelist_heir_relatives:
+                        dynasty_viable = True
+                elif heir_sim_info.id in halfsiblings:
+                    if int(RelationshipType.HALF_SIBLING) in SETTINGS.whitelist_heir_relatives:
+                        dynasty_viable = True       
+                elif heir_sim_info.id in parents:
+                    if int(RelationshipType.DESCENDANT) in SETTINGS.whitelist_heir_relatives:
+                        dynasty_viable = True
+                elif heir_sim_info.id in grandchildren:
+                    if int(RelationshipType.GRANDPARENT) in SETTINGS.whitelist_heir_relatives:
+                        dynasty_viable = True
+                elif heir_sim_info.id in grandparents:
+                    if int(RelationshipType.GRANDCHILD) in SETTINGS.whitelist_heir_relatives:
+                        dynasty_viable = True
+                elif heir_sim_info.id in piblings:
+                    if int(RelationshipType.SIBLINGS_CHILD) in SETTINGS.whitelist_heir_relatives:
+                        dynasty_viable = True
+                elif heir_sim_info.id in niblings:
+                    if int(RelationshipType.PARENTS_SIBLING) in SETTINGS.whitelist_heir_relatives:
+                        dynasty_viable = True
+        
+        if "member" in SETTINGS.add_which_roles and not dynasty_viable:
+            member_sim_ids = list(dynasty.get_members())
+            for member_sim_id in member_sim_ids:
+                member_sim_info = services.sim_info_manager().get(member_sim_id)
+                if member_sim_info is None or member_sim_info is head_sim_info or member_sim_info is heir_sim_info:
+                    continue
+                if _are_sims_related_or_married(member_sim_info,target_sim_info):
+                    if member_sim_info.id in children:
+                        if int(RelationshipType.PARENT) in SETTINGS.whitelist_member_relatives:
+                            dynasty_viable = True
+                    elif member_sim_info.id in spouses:
+                        if int(RelationshipType.SPOUSE) in SETTINGS.whitelist_member_relatives:
+                            dynasty_viable = True
+                    elif member_sim_info.id in siblings:
+                        if int(RelationshipType.SIBLING) in SETTINGS.whitelist_member_relatives:
+                            dynasty_viable = True
+                    elif member_sim_info.id in halfsiblings:
+                        if int(RelationshipType.HALF_SIBLING) in SETTINGS.whitelist_member_relatives:
+                            dynasty_viable = True       
+                    elif member_sim_info.id in parents:
+                        debug_log(SETTINGS.whitelist_member_relatives)
+                        if int(RelationshipType.DESCENDANT) in SETTINGS.whitelist_member_relatives:
+                            dynasty_viable = True
+                    elif member_sim_info.id in grandchildren:
+                        if int(RelationshipType.GRANDPARENT) in SETTINGS.whitelist_member_relatives:
+                            dynasty_viable = True
+                    elif member_sim_info.id in grandparents:
+                        if int(RelationshipType.GRANDCHILD) in SETTINGS.whitelist_member_relatives:
+                            dynasty_viable = True
+                    elif member_sim_info.id in piblings:
+                        if int(RelationshipType.SIBLINGS_CHILD) in SETTINGS.whitelist_member_relatives:
+                            dynasty_viable = True
+                    elif member_sim_info.id in niblings:
+                        if int(RelationshipType.PARENTS_SIBLING) in SETTINGS.whitelist_member_relatives:
+                            dynasty_viable = True
+
+        if dynasty_viable == True:
+            viable_dynasties.append(dynasty)
+
+    if len(viable_dynasties) == 0:
+        return
+    
+    highest_prior_dynasty = viable_dynasties[0]
+
+    for dynasty in viable_dynasties:
+        if _is_dynasty_played(dynasty):
+            highest_prior_dynasty = dynasty
+            break
+        elif _get_highest_prestige_dynasty(dynasty,highest_prior_dynasty) is dynasty:
+            highest_prior_dynasty = dynasty
+
+    return highest_prior_dynasty
 
 # Function Name: _set_sim_as_noble_successor()
 # Description: Sets a sim as another sim's noble successor if the latter is in the noble career.
@@ -481,6 +640,27 @@ def _get_highest_prestige_dynasty(dynasty_a,dynasty_b) -> Dynasty:
         return highest_dynasty
     return highest_dynasty
 
+
+def _clean_multi_dynasty_sim(target_sim_id):
+    highest_dynasty = services.dynasty_service().get_sim_dynasty(target_sim_id)
+    dynasties_to_clean = []
+    for dynasty in list(services.dynasty_service()._dynasties.values()):
+        if dynasty is None or highest_dynasty is dynasty:
+            continue 
+        member_sim_ids = list(dynasty.get_members())
+        if target_sim_id not in member_sim_ids:
+            continue
+        else:
+            dynasties_to_clean.append(dynasty)
+        if dynasty.get_head_sim_id() == target_sim_id:
+            highest_dynasty = dynasty
+            break
+        highest_dynasty = _get_highest_prestige_dynasty(dynasty,highest_dynasty) if not _is_dynasty_played(highest_dynasty) or (_is_dynasty_played(highest_dynasty) and _is_dynasty_played(dynasty)) else highest_dynasty
+    for dynasty in dynasties_to_clean:
+        if dynasty is not highest_dynasty:
+            dynasty.remove_member(target_sim_id,update_client=True)
+
+
 # Function Name: _check_child_for_dynasties()
 # Description: Once a new child is born or adopted, this checks their parents for dynasties. If the parent is a head/heir of their dynasty, the child may be added.
 # If both parents are in different dynasties which they are head/heirs of, the child will be added to whichever dynasty has the highest prestige.
@@ -491,7 +671,7 @@ def _check_child_for_dynasties(sim_info) -> None:
     if sim_info is None:
         return
     
-    if sim_info.household.is_player_household == True or _get_sim_dynasty(sim_info) is not None or sim_info.is_young_adult_or_older:
+    if _get_sim_dynasty(sim_info) is not None or sim_info.is_young_adult_or_older:
         return
     
     sim_is_in_dynasty = _get_sim_dynasty(sim_info) is not None
@@ -540,8 +720,8 @@ def _check_child_for_dynasties(sim_info) -> None:
         
         if highest_dynasty is None:
             highest_dynasty = parent_dynasty
-        elif highest_dynasty is not None and parent_dynasty is not None:
-            if parent_dynasty.get_prestige_value() > highest_dynasty.get_prestige_value():
+        elif highest_dynasty is not None and parent_dynasty is not None and not _is_dynasty_played(highest_dynasty):
+            if _is_dynasty_played(parent_dynasty) or _get_highest_prestige_dynasty(highest_dynasty,parent_dynasty) is parent_dynasty:
                 highest_dynasty = parent_dynasty
 
     if highest_dynasty is not None:
@@ -796,7 +976,7 @@ def _hook_dynastyservice_daily_update(original, self, *args, **kwargs):
                     if member_sim_info:
                         member_children_sim_infos = _order_relative_list(list(member_sim_info.genealogy.get_children_sim_ids_gen()))
                         for child_sim_info in member_children_sim_infos:
-                            if _get_sim_dynasty(child_sim_info) is None:
+                            if _get_sim_dynasty(child_sim_info) is None and not child_sim_info.household.is_player_household:
                                 _check_child_for_dynasties(child_sim_info)
                         spouse_sim_info = sim_info_manager.get(member_sim_info.spouse_sim_id)
                         if spouse_sim_info is not None:
@@ -812,6 +992,8 @@ def _hook_dynastyservice_daily_update(original, self, *args, **kwargs):
 
 @inject_to(DynastyService, "_repair_existing_children_for_dynasties")
 def _hook_dynastyservice_repair_existing_children_for_dynastiest(original, self, update_kingdom_titles, *args, **kwargs):
+    if not SETTINGS.global_automatic_repair:
+        return 0
     repaired = 0
     sim_info_manager = services.sim_info_manager()
     if sim_info_manager is None:
@@ -822,18 +1004,12 @@ def _hook_dynastyservice_repair_existing_children_for_dynastiest(original, self,
         if not child_sim_info is None:
             if not child_sim_info.is_pet:
                 if self.get_sim_dynasty(child_sim_info.id) is None:
-                    highest_dynasty = None
-                    
-                    for parent_id in child_sim_info.genealogy.get_parent_sim_ids_gen():
-                        dynasty = self.get_dynasty(parent_id)
-                        highest_dynasty = _get_highest_prestige_dynasty(highest_dynasty,dynasty)
-                        repaired += 1
-                    
-                    if highest_dynasty is not None:
-                        highest_dynasty.add_member(child_sim_info, update_client = True)
-
-                        if update_kingdom_titles and kingdom_service is not None:
-                            kingdom_service.update_sim_info_title(child_sim_info)
+                    if (child_sim_info.household.is_player_household and SETTINGS.enable_repair_for_played) or (not child_sim_info.household.is_player_household and SETTINGS.enable_repair_for_unplayed):
+                        dynasty = _calculate_sim_for_dynasty(child_sim_info)
+                        if dynasty is not None:
+                            debug_log(f"SELECTED {dynasty.name} DYNASTY FOR {child_sim_info.first_name} {child_sim_info.last_name}")
+                            dynasty.add_member(child_sim_info)
+                            repaired += 1
     return repaired
 
 
@@ -842,13 +1018,14 @@ def _hook_dynastyservice_handle_new_child_event(original, self, parent_sim_info,
     try:
         if offspring_sim_info is None or offspring_sim_info.is_pet or _get_sim_dynasty(offspring_sim_info) is not None:
             return
-        _check_child_for_dynasties(offspring_sim_info)
+        if not offspring_sim_info.household.is_player_household or (SETTINGS.global_automatic_repair and SETTINGS.enable_repair_for_played):
+            _check_child_for_dynasties(offspring_sim_info)
     except:
         return original(self, parent_sim_info, offspring_sim_info, *args, **kwargs)
 
 
 @inject_to(DynastyService, "_on_sim_spawned")
-def _hook_editmodesequencecompletestate_on_enter(original, self, *args, **kwargs):
+def _hook_dynasty_service_on_sim_spawned(original, self, *args, **kwargs):
     debug_log("HOOK: DynastyService._on_sim_spawned fired")
     result = original(self, *args, **kwargs)
     try:
@@ -956,9 +1133,10 @@ def _hook_dynasty_set_head(original, self, *args, **kwargs):
 
         head_children_sim_infos = _order_relative_list(list(head_sim_info.genealogy.get_children_sim_ids_gen()))
 
-        for child_sim_info in head_children_sim_infos:
-            if _get_sim_dynasty(child_sim_info) is None and child_sim_info is not None and _get_sim_dynasty(child_sim_info) == None:
-                self.add_member(child_sim_info,update_client=True)
+        if SETTINGS.automatic_children_join:
+            for child_sim_info in head_children_sim_infos:
+                if _get_sim_dynasty(child_sim_info) is None and child_sim_info is not None and _get_sim_dynasty(child_sim_info) == None:
+                    self.add_member(child_sim_info,update_client=True)
 
         _calculate_dynasty_heir(self)
         _calculate_dynasty_black_sheeps(self)
@@ -1075,3 +1253,41 @@ def _hook_kingdom_service_handle_spouse_eventr(original, self, sim_info, resolve
         debug_log("EXCEPTION in KingdomService.handle_spouse_event hook:\n" + traceback.format_exc())
         
     return result
+
+
+@inject_to(DynastyService, "on_all_households_and_sim_infos_loaded")
+def _hook_dynastyservice_on_all_households_and_sim_infos_loaded(original, self, client, *args, **kwargs):
+    try:
+        distributor_op = DistributorOps_pb2.DynastyInfo()
+        distributor_op.message_type = DynastyMessageType.ADD
+        active_household = services.active_household()
+        dynasties_to_remove = []
+        for (dynasty_id, dynasty) in self._dynasties.items():
+            try:
+                dynasty.on_all_households_and_sim_infos_loaded(active_household)
+                if len(dynasty.get_members()) == 0:
+                    dynasties_to_remove.append(dynasty)
+                else:
+                    sim_info_manager = services.sim_info_manager()
+                    with ProtocolBufferRollback(distributor_op.dynasties) as dynasty_data_msg:
+                        dynasty.add_dynasty_members(dynasty_data_msg, sim_info_manager)
+                        dynasty.add_detailed_dynasty_data(dynasty_data_msg, sim_info_manager)
+            except:
+                logger.exception('Unhandled error in on_all_households_and_sim_infos_loaded of dynasty: {}', dynasty_id)
+        for dynasty in dynasties_to_remove:
+            self.remove_dynasty(dynasty)
+        if not self._offspring_repair_done:
+            repaired = self._repair_existing_children_for_dynasties(update_kingdom_titles=True)
+            logger.info('DynastyService: offspring repair added %s sims', repaired)
+            self._offspring_repair_done = True
+        for (dynasty_id, dynasty) in list(self._dynasties.items()):
+            member_sim_ids = list(dynasty.get_members())
+            for member_sim_id in member_sim_ids:
+                if self.get_sim_dynasty(member_sim_id) is not dynasty:
+                    _clean_multi_dynasty_sim(member_sim_id)
+            dynasty.distribute_dynasty_msg(DynastyMessageType.UPDATE)
+        self.send_dynasties_to_client(distributor_op)
+    except:
+        debug_log("EXCEPTION in DynastyService.on_all_households_and_sim_infos_loaded hook:\n" + traceback.format_exc())
+        return original(self, client, *args, **kwargs)
+    return

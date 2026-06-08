@@ -61,6 +61,8 @@ def show_main_settings_picker(sim_info):
             push_sa(sim,MOD_SA_IDS["openDynastySettings_SA"])
         elif result_tag == "noblesettings":
             push_sa(sim,MOD_SA_IDS["openNobleSettings_SA"])
+        elif result_tag == "earepairsettings":
+            push_sa(sim,MOD_SA_IDS["openEARepairSettings_SA"])
         elif result_tag == "resettodefault":
             SETTINGS.reset_to_defaults()
 
@@ -86,6 +88,16 @@ def show_main_settings_picker(sim_info):
                 "is_enable": True,
                 "icon": sims4.resources.get_resource_key(
                     0xcbfe10f0e82af944,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0xD976BDDF, # EA Dynasty Repair Settings
+                "row_description_key": 0x8BD94135, # Settings to disable/alter EA's automatic dynasty repair on game load.
+                "tag": "earepairsettings",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x0603A67EE530554D,
                     0x2F7D0004
                 )
             },
@@ -227,7 +239,6 @@ def show_enable_disable_setting_picker(sim_info,setting_name,sa_id,parent_sa_id,
         is_enabled=bool(setting_value)
     )
 
-
 def show_item_setting_picker(sim_info,rows,on_submit,title_key,text_key,max_selectable_num=1):
 
     sim = sim_info.get_sim_instance()
@@ -243,7 +254,6 @@ def show_item_setting_picker(sim_info,rows,on_submit,title_key,text_key,max_sele
         on_submit=on_submit,
         max_selectable_num=max_selectable_num
     )
-
 
 def show_dynasty_settings_picker(sim_info):
 
@@ -363,6 +373,126 @@ def show_dynasty_settings_picker(sim_info):
         ],
         on_submit=on_submit
     )
+
+def show_earepair_settings_picker(sim_info):
+
+    sim = sim_info.get_sim_instance()
+    
+    if not sim:
+        return
+
+    def on_submit(dialog_instance):
+
+        if not dialog_instance.accepted:
+            push_sa(sim,MOD_SA_IDS["openGlobalSettings_SA"])
+            return
+
+        result_tag = dialog_instance.get_single_result_tag()
+        services.ui_dialog_service().dialog_cancel(dialog_instance.dialog_id)
+        debug_log(f"PICKER RESULT: {result_tag}")
+
+        if result_tag == "masterearepairsetting":
+            push_sa(sim,MOD_SA_IDS["openGlobalEARepairEnabler_SA"])
+        elif result_tag == "masterplayedsetting":
+            push_sa(sim,MOD_SA_IDS["openPlayedEARepairEnabler_SA"])
+        elif result_tag == "masterunplayedsetting":
+            push_sa(sim,MOD_SA_IDS["openUnplayedEARepairEnabler_SA"])
+        elif result_tag == "whichmemberrelatives":
+            push_sa(sim,MOD_SA_IDS["openEARepairWhichRoles_SA"])
+        elif result_tag == "headrepairsettings":
+            push_sa(sim,MOD_SA_IDS["openEARepairHeadWhitelist_SA"])
+        elif result_tag == "heirrepairsettings":
+            push_sa(sim,MOD_SA_IDS["openEARepairHeirWhitelist_SA"])
+        elif result_tag == "memberrepairsettings":
+            push_sa(sim,MOD_SA_IDS["openEARepairMemberWhitelist_SA"])
+        elif result_tag == "goback":
+            push_sa(sim,MOD_SA_IDS["openGlobalSettings_SA"])
+
+    show_item_picker_dialog(
+        sim_info=sim_info,
+        title_key=0xD976BDDF, # EA Dynasty Repair Settings
+        text_key=0x8BD94135, # Settings to disable/alter EA's automatic dynasty repair on game load.
+        rows=[
+            {
+                "name_key": 0xF0E4E429, # [MASTER] Enable/Disable EA Dynasty Repairs
+                "row_description_key": 0xC637BCD3, # Setting to enable/disable the automatic EA repairs that happens on game load.
+                "tag": "masterearepairsetting",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x0603A67EE530554D,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x868135E3, # [MASTER] Enable/Disable Repairs for Played Dynasties
+                "row_description_key": 0xF7E10FF0, # Setting to enable/disable the automatic EA repairs for played dynasties.
+                "tag": "masterplayedsetting",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x1F4672FD624A24C4,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x3C6B74E6, # [MASTER] Enable/Disable Repairs for Unplayed Dynasties
+                "row_description_key": 0x608F2EA6, # Setting to enable/disable the automatic EA repairs for unplayed dynasties.
+                "tag": "masterunplayedsetting",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x73A4730B044D78B9,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0xAAC3B83A, # Dynasty Roles for Repair
+                "row_description_key": 0xD6391B9E, # Which dynasty roles should be checked for relatives to add to the dynasty.
+                "tag": "whichmemberrelatives",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0xA8AE08E5B77C91CA,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x0F3C1151, # Head Sim Relative Whitelist
+                "row_description_key": 0x53E04AB7, # Which types of head sim relatives will be added during repair.
+                "tag": "headrepairsettings",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x7C04FD8E1385541F,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x6183F531, # Heir Sim Relative Whitelist
+                "row_description_key": 0x7010CEDF, # Which types of heir sim relatives will be added during repair.
+                "tag": "heirrepairsettings",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x7C04FD8E1385541F,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x8D4843EA, # Member Sim Relative Whitelist
+                "row_description_key": 0xFF075923, # Which types of member sim relatives will be added during repair.
+                "tag": "memberrepairsettings",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x7C04FD8E1385541F,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0xDDC3EC7E, # Go back
+                "tag": "goback",
+                "is_enable": True,
+                "icon": GO_BACK_ICON
+            }
+        ],
+        on_submit=on_submit
+    )
+
 
 def show_dynastychild_settings_picker(sim_info):
 
