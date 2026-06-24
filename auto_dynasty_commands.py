@@ -12,9 +12,24 @@ from .ui.auto_dynasty_uidialogs import show_text_input_dialog, show_item_picker_
 from .utils.debug_logger import debug_log
 
 # *My Modules*
-from .auto_dynasty_menus import push_sa, show_main_settings_picker, show_dynasty_settings_picker, show_noble_settings_picker, show_enable_disable_setting_picker, show_number_setting_picker, show_item_setting_picker, show_dynastychild_settings_picker, show_dynastymarriage_settings_picker, show_dynastyheir_settings_picker, show_dynastyblacksheep_settings_picker, show_dynastyrelations_settings_picker, show_dynastyrelations_alliances_picker, show_dynastyrelations_rivalries_picker, show_earepair_settings_picker, SELECTED_ICON, UNSELECTED_ICON, GO_BACK_ICON
+from .auto_dynasty_main import _clear_alarm, _add_alarm, _reset_alarm
+from .auto_dynasty_menus import push_sa, show_main_settings_picker, show_dynasty_settings_picker, show_noble_settings_picker, show_enable_disable_setting_picker, show_number_setting_picker, show_item_setting_picker, show_dynastychild_settings_picker, show_dynastymarriage_settings_picker, show_dynastyheir_settings_picker, show_dynastyblacksheep_settings_picker, show_dynastyrelations_settings_picker, show_dynastyrelations_alliances_picker, show_dynastyrelations_rivalries_picker, show_earepair_settings_picker, show_dailyupdate_settings_picker, SELECTED_ICON, UNSELECTED_ICON, GO_BACK_ICON
 from .auto_dynasty_settings import SETTINGS
 from .auto_dynasty_tuning import MOD_SA_IDS
+
+def _reset_daily_alarm(curr_setting):
+    _reset_alarm()
+
+def _alarm_enabledisable(curr_setting):
+    if curr_setting:
+        _reset_alarm()
+    else:
+        _clear_alarm()
+
+POST_SETTING_CHANGE_MAP = {
+    "enabledisablealarm": _alarm_enabledisable,
+    "resetalarm": _reset_daily_alarm,
+}
 
 @sims4.commands.Command(
     'uwaepo.dynastymod_open_menu',
@@ -50,6 +65,8 @@ def dynasty_open_item_picker_menu(menu_name: str = "", opt_sim: OptionalSimInfoP
             show_dynastyrelations_rivalries_picker(sim_info)
         elif menu_name == "earepair":
             show_earepair_settings_picker(sim_info)
+        elif menu_name == "dailyupdates":
+            show_dailyupdate_settings_picker(sim_info)
     except:
         debug_log("EXCEPTION in uwaepo.dynastymod_open_menu command:\n" + traceback.format_exc())
 
@@ -57,7 +74,7 @@ def dynasty_open_item_picker_menu(menu_name: str = "", opt_sim: OptionalSimInfoP
     'uwaepo.dynastymod_open_settings_enabledisabler_picker',
     command_type=sims4.commands.CommandType.Live
 )
-def dynasty_open_settings_enabledisabler_picker(setting_name: str = "", sa_key: str = "", parent_sa_key: str = "", title_key: str = "", text_key: str = "", opt_sim: OptionalSimInfoParam = None, _connection=None):
+def dynasty_open_settings_enabledisabler_picker(setting_name: str = "", sa_key: str = "", parent_sa_key: str = "", title_key: str = "", text_key: str = "", post_setting_change: str = "", opt_sim: OptionalSimInfoParam = None, _connection=None):
     debug_log("COMMMAND: uwaepo.dynastymod_open_settings_enabledisabler_picker fired")
     try:
         sa_id = MOD_SA_IDS.get(sa_key)
@@ -75,8 +92,11 @@ def dynasty_open_settings_enabledisabler_picker(setting_name: str = "", sa_key: 
             if sim_info is None:
                 debug_log("[AutoDynastyMod] No SimInfo found.", _connection)
                 return False
-            
-            show_enable_disable_setting_picker(sim_info,setting_name,sa_id,parent_sa_id,title_key,text_key)
+
+            debug_log(f"{post_setting_change}")
+            debug_log(f"Exists: {POST_SETTING_CHANGE_MAP.get(post_setting_change) is not None}")
+
+            show_enable_disable_setting_picker(sim_info=sim_info,setting_name=setting_name,sa_id=sa_id,parent_sa_id=parent_sa_id,title_key=title_key,text_key=text_key,post_setting_change=POST_SETTING_CHANGE_MAP.get(post_setting_change))
     except:
         debug_log("EXCEPTION in uwaepo.dynastymod_open_settings_enabledisabler_picker command:\n" + traceback.format_exc())
 
@@ -809,3 +829,132 @@ def dynasty_open_settings_dynastyrole_picker(setting_name: str = "", sa_key: str
             show_item_setting_picker(sim_info,rows,on_setting_change,title_key,text_key)
     except:
         debug_log("EXCEPTION in uwaepo.dynasty_open_settings_familyrelation_picker command:\n" + traceback.format_exc())
+
+
+@sims4.commands.Command(
+    'uwaepo.dynastymod_open_settings_number_picker_postsetting',
+    command_type=sims4.commands.CommandType.Live
+)
+def dynasty_open_settings_number_picker_postsetting(setting_name: str = "", parent_sa_key: str = "", lower_bound: int = -100, upper_bound: int = 100, title_key: str = "", text_key: str = "", field_title_key: str = "", post_setting_change: str = "", opt_sim: OptionalSimInfoParam = None, _connection=None):
+    debug_log("COMMMAND: uwaepo.dynastymod_open_settings_number_picker_postsetting fired")
+    try:
+        parent_sa_id = MOD_SA_IDS.get(parent_sa_key)
+
+        try:
+            title_key = int(title_key,0)
+            text_key = int(text_key,0)
+            field_title_key = int(field_title_key,0)
+        except ValueError:
+            return
+
+        if (parent_sa_id is not None):
+
+            sim_info = get_optional_target(opt_sim, target_type=OptionalSimInfoParam, _connection=_connection)
+            if sim_info is None:
+                debug_log("[AutoDynastyMod] No SimInfo found.", _connection)
+                return False
+
+            debug_log(f"{post_setting_change}")
+            debug_log(f"Exists: {POST_SETTING_CHANGE_MAP.get(post_setting_change) is not None}")
+            
+            show_number_setting_picker(sim_info=sim_info,setting_name=setting_name,parent_sa_id=parent_sa_id,lower_bound=lower_bound,upper_bound=upper_bound,title_key=title_key,text_key=text_key,field_title_key=field_title_key,post_setting_change=POST_SETTING_CHANGE_MAP.get(post_setting_change))
+    except:
+        debug_log("EXCEPTION in uwaepo.dynastymod_open_settings_number_picker_postsetting command:\n" + traceback.format_exc())
+
+
+@sims4.commands.Command(
+    'uwaepo.dynastymod_open_weekday_picker',
+    command_type=sims4.commands.CommandType.Live
+)
+def dynasty_open_settings_weekday_picker(setting_name: str = "", sa_key: str = "", parent_sa_key: str = "", title_key: str = "", text_key: str = "", opt_sim: OptionalSimInfoParam = None, _connection=None):
+    debug_log("COMMMAND: uwaepo.dynastymod_open_weekday_picker fired")
+    try:
+        sa_id = MOD_SA_IDS.get(sa_key)
+        parent_sa_id = MOD_SA_IDS.get(parent_sa_key)
+
+        try:
+            title_key = int(title_key,0)
+            text_key = int(text_key,0)
+        except ValueError:
+            return
+
+        sim_info = get_optional_target(opt_sim, target_type=OptionalSimInfoParam, _connection=_connection)
+        if sim_info is None:
+            debug_log("[AutoDynastyMod] No SimInfo found.", _connection)
+            return False
+
+        sim = sim_info.get_sim_instance()
+    
+        if not sim:
+            return
+
+        if (sa_id is not None and parent_sa_id is not None):
+
+            def on_setting_change(dialog_instance):
+                if not dialog_instance.accepted:
+                    push_sa(sim,parent_sa_id)
+                    return
+
+                result_tag = dialog_instance.get_single_result_tag()
+
+                if result_tag == "goback":
+                    push_sa(sim,parent_sa_id)
+                    return
+                
+                debug_log(f"PICKER RESULT: {result_tag}")
+
+                new_setting = getattr(SETTINGS,setting_name,[])
+                
+                debug_log(f"BEFORE: {new_setting}")
+                
+                tag = int(result_tag)
+
+                if tag in new_setting:
+                    new_setting.remove(tag)
+                else:
+                    new_setting.append(tag)
+
+                debug_log(f"AFTER: {new_setting}")
+
+                if new_setting is not None:
+                    debug_log(f"CHANGING SETTING")
+                    setattr(SETTINGS,setting_name,new_setting)
+                    SETTINGS.save()
+                
+                push_sa(sim,sa_id)
+
+            DAY_STBL_MAP = {0: 0x678847F3, 1: 0x936BAEA7, 2: 0x3027C506, 3: 0x435D337E, 4: 0xEAC994FB, 5: 0xE267024C, 6: 0x7F8C3F3D}
+
+            rows=[]
+
+            for i in range(1,7):
+                rows.append(
+                    {
+                        "name_key": DAY_STBL_MAP.get(i),
+                        "tag": i,
+                        "is_enable": True,
+                        "icon": SELECTED_ICON if i in getattr(SETTINGS,setting_name,None) else UNSELECTED_ICON
+                    }
+                )
+
+            rows.append(
+                {
+                    "name_key": DAY_STBL_MAP.get(0),
+                    "tag": 0,
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if 0 in getattr(SETTINGS,setting_name,None) else UNSELECTED_ICON
+                }
+            )
+
+            rows.append(
+                {
+                    "name_key": 0xDDC3EC7E, # Go back
+                    "tag": "goback",
+                    "is_enable": True,
+                    "icon": GO_BACK_ICON
+                }
+            )
+
+            show_item_setting_picker(sim_info,rows,on_setting_change,title_key,text_key)
+    except:
+        debug_log("EXCEPTION in uwaepo.dynastymod_open_weekday_picker command:\n" + traceback.format_exc())

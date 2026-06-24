@@ -78,6 +78,12 @@ MOD_SA_IDS = {
     "openEARepairHeadWhitelist_SA": 6758529585397702898,
     "openEARepairHeirWhitelist_SA": 8237388679642039836,
     "openEARepairMemberWhitelist_SA": 2515016787012196306,
+
+    "openDynastyDailyUpdatesSub_SA": 17681004445027050576,
+    "openGlobalDailyUpdatesEnabler_SA": 7905652117397583964,
+    "openDailyUpdateTimePicker_SA": 9876246621668903607,
+    "openDailyUpdateDayPicker_SA": 7102309261294649027,
+    "openDailyUpdateEARepairEnabler_SA": 4959565179926849396,
 }
 
 SA_IDS_TO_INJECT = (

@@ -5,6 +5,10 @@ import traceback
 import services
 import sims4.resources
 
+import alarms
+
+import date_and_time
+
 from careers.career_enums import CareerCategory
 from careers.career_tracker import CareerTracker
 
@@ -32,8 +36,6 @@ from sims.sim_info_types import Age, Gender
 
 from relationships.relationship_tracker import RelationshipTracker
 
-from zone import Zone
-
 # *My Modules*
 from .auto_dynasty_settings import SETTINGS
 from . import constants
@@ -43,6 +45,10 @@ from .utils.debug_logger import debug_log
 
 import sims4
 logger = sims4.log.Logger('Dynasty')
+
+# *Global Variables*
+
+daily_check_alarm_handle = None
 
 # *Functions*
 
@@ -122,7 +128,6 @@ def _calculate_sim_for_dynasty(target_sim_info) -> Dynasty:
 
         heir_sim_info = dynasty.get_heir_sim_info()
         
-        debug_log(f"HEAD IN SETTINGS {'head' in SETTINGS.add_which_roles}")
         if _are_sims_related_or_married(head_sim_info,target_sim_info) and "head" in SETTINGS.add_which_roles:
             if head_sim_info.id in children:
                 # sim is head's parent
@@ -277,7 +282,7 @@ def _remove_fulltime_careers(sim_info: SimInfo) -> bool:
     career_uids_to_remove = []
 
     for career_uid, career in career_tracker.careers.items():
-        if career.career_category == CareerCategory.Work:
+        if career.career_category == CareerCategory.Work and not career_uid == KingdomTuning.NOBLE_CAREER.guid64:
             career_uids_to_remove.append(career_uid)
 
     for career_uid in career_uids_to_remove:
@@ -299,7 +304,7 @@ def _add_noble_career(sim_info: SimInfo) -> bool:
     
     career_tracker = services.sim_info_manager().get(sim_info.id).career_tracker
     new_career = KingdomTuning.NOBLE_CAREER(sim_info)
-    career_tracker.add_career(new_career, show_confirmation_dialog=False)
+    career_tracker.add_career(new_career, show_confirmation_dialog=False, show_join_msg=False)
 
     return True
 
@@ -773,30 +778,29 @@ def _on_sim_marriage(sim_info,spouse_sim_info):
     debug_log(f"Sim Is Dynasty Head/Heir: {sim_is_head or sim_is_heir}")
     debug_log(f"Spouse Is Dynasty Head/Heir: {spouse_is_head or spouse_is_heir}")
 
-    if SETTINGS.add_dynasty_spouse == "head":
-        if sim_is_head == False:
-            sim_dynasty = None
-        if spouse_is_head == False:
-            spouse_dynasty = None
-    elif SETTINGS.add_dynasty_spouse == "headheir":
-        if (sim_is_head or sim_is_heir) == False:
-            sim_dynasty = None
-        if (spouse_is_head or spouse_is_heir) == False:
-            spouse_dynasty = None
+    if spouse_dynasty is not sim_dynasty:
+        if SETTINGS.add_dynasty_spouse == "head":
+            if sim_is_head == False:
+                sim_dynasty = None
+            if spouse_is_head == False:
+                spouse_dynasty = None
+        elif SETTINGS.add_dynasty_spouse == "headheir":
+            if (sim_is_head or sim_is_heir) == False:
+                sim_dynasty = None
+            if (spouse_is_head or spouse_is_heir) == False:
+                spouse_dynasty = None
+        
+        highest_dynasty = _get_highest_prestige_dynasty(sim_dynasty,spouse_dynasty)
+        
+        if highest_dynasty is None:
+            return
 
-    highest_dynasty = _get_highest_prestige_dynasty(sim_dynasty,spouse_dynasty)
-    
-    if highest_dynasty is None:
-        return
+        if highest_dynasty == sim_dynasty:
+            highest_dynasty.add_member(spouse_sim_info,update_client=True)
+        else:
+            highest_dynasty.add_member(sim_info,update_client=True)
 
-    if highest_dynasty == sim_dynasty:
-        highest_dynasty.add_member(spouse_sim_info,update_client=True)
-    else:
-        highest_dynasty.add_member(sim_info,update_client=True)
-
-    _sync_dynasty_names(sim_info,spouse_sim_info)
-
-    return
+        _sync_dynasty_names(sim_info,spouse_sim_info)
 
 def _sync_dynasty_names(sim_info,spouse_sim_info,dynasty_save_data=None):
     if (SETTINGS.enforce_dynasty_name and SETTINGS.global_dynasty_mod_enabler) is not True:
@@ -954,62 +958,94 @@ def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
             debug_log(f"Adding {target_dynasty.name} as {main_dynasty.name} rival.")
             dynasty_service.add_rivalry(main_dynasty,target_dynasty)
 
-
-# *Hooks*
-
-# Daily update every 7 AM in sims time.
-# Updates relationship, members and enforces dynasty surnames.
-@inject_to(DynastyService, "_daily_update")
-def _hook_dynastyservice_daily_update(original, self, *args, **kwargs):
-    try:
-        sim_info_manager = services.sim_info_manager()
-
-        for (dynasty_id, dynasty) in self._dynasties.items():
-            if dynasty and _is_dynasty_played(dynasty) is False:
-                _calculate_dynasty_heir(dynasty)
-                _calculate_dynasty_black_sheeps(dynasty)
-                _calculate_dynasty_relations(dynasty)
-
-                member_sim_ids = list(dynasty.get_members())
-                for member_sim_id in member_sim_ids:
-                    member_sim_info = sim_info_manager.get(member_sim_id)
-                    if member_sim_info:
-                        member_children_sim_infos = _order_relative_list(list(member_sim_info.genealogy.get_children_sim_ids_gen()))
-                        for child_sim_info in member_children_sim_infos:
-                            if _get_sim_dynasty(child_sim_info) is None and not child_sim_info.household.is_player_household:
-                                _check_child_for_dynasties(child_sim_info)
-                        spouse_sim_info = sim_info_manager.get(member_sim_info.spouse_sim_id)
-                        if spouse_sim_info is not None:
-                            if dynasty is not _get_sim_dynasty(spouse_sim_info):
-                                _on_sim_marriage(member_sim_info,spouse_sim_info)
-                            else:
-                                if member_sim_info.last_name != spouse_sim_info.last_name:
-                                    _sync_dynasty_names(member_sim_info,spouse_sim_info)
-    except:
-        debug_log("EXCEPTION in DynastyService._daily_update hook:\n" + traceback.format_exc())
-    return original(self, *args, **kwargs)
-
-
-@inject_to(DynastyService, "_repair_existing_children_for_dynasties")
-def _hook_dynastyservice_repair_existing_children_for_dynastiest(original, self, update_kingdom_titles, *args, **kwargs):
-    if not SETTINGS.global_automatic_repair:
-        return 0
+def _offspring_repair_check(update_kingdom_titles=False):
     repaired = 0
     sim_info_manager = services.sim_info_manager()
     if sim_info_manager is None:
         logger.error('DynastyService: sim_info_manager is None, skipping offspring repair.')
         return 0
+    dynasty_service = services.dynasty_service()
     kingdom_service = services.kingdom_service()
     for child_sim_info in sim_info_manager.get_all():
         if not child_sim_info is None:
             if not child_sim_info.is_pet:
-                if self.get_sim_dynasty(child_sim_info.id) is None:
+                if dynasty_service.get_sim_dynasty(child_sim_info.id) is None:
                     if (child_sim_info.household.is_player_household and SETTINGS.enable_repair_for_played) or (not child_sim_info.household.is_player_household and SETTINGS.enable_repair_for_unplayed):
                         dynasty = _calculate_sim_for_dynasty(child_sim_info)
                         if dynasty is not None:
                             debug_log(f"SELECTED {dynasty.name} DYNASTY FOR {child_sim_info.first_name} {child_sim_info.last_name}")
                             dynasty.add_member(child_sim_info)
+                            if update_kingdom_titles and kingdom_service is not None:
+                                kingdom_service.update_sim_info_title(child_sim_info)
                             repaired += 1
+    return repaired
+
+def _on_daily_update(owner):
+    global daily_check_alarm_handle
+    now = services.time_service().sim_now
+
+    debug_log(f"HOUR NUMBER: {now.hour()}")
+    debug_log(f"DAY NUMBER: {now.day()}")
+
+    if SETTINGS.enable_daily_updates:
+        if now.day() in SETTINGS.daily_update_days:
+            try:
+                sim_info_manager = services.sim_info_manager()
+                for (dynasty_id, dynasty) in services.dynasty_service()._dynasties.items():
+                    if dynasty and _is_dynasty_played(dynasty) is False:
+                        _calculate_dynasty_heir(dynasty)
+                        _calculate_dynasty_black_sheeps(dynasty)
+                        _calculate_dynasty_relations(dynasty)
+
+                        member_sim_ids = list(dynasty.get_members())
+                        for member_sim_id in member_sim_ids:
+                            member_sim_info = sim_info_manager.get(member_sim_id)
+                            if member_sim_info:
+                                member_children_sim_infos = _order_relative_list(list(member_sim_info.genealogy.get_children_sim_ids_gen()))
+                                for child_sim_info in member_children_sim_infos:
+                                    if _get_sim_dynasty(child_sim_info) is None and not child_sim_info.household.is_player_household:
+                                        _check_child_for_dynasties(child_sim_info)
+                                spouse_sim_info = sim_info_manager.get(member_sim_info.spouse_sim_id)
+                                if spouse_sim_info is not None:
+                                    if dynasty is not _get_sim_dynasty(spouse_sim_info):
+                                        _on_sim_marriage(member_sim_info,spouse_sim_info)
+                                    else:
+                                        if member_sim_info.last_name != spouse_sim_info.last_name:
+                                            _sync_dynasty_names(member_sim_info,spouse_sim_info)
+                if SETTINGS.daily_ea_repair:
+                    _offspring_repair_check(update_kingdom_titles=True)
+            except:
+                debug_log("EXCEPTION in daily dynasty update:\n" + traceback.format_exc())
+    else:
+        _clear_alarm()
+
+def _add_alarm(owner):
+    if SETTINGS.enable_daily_updates:
+        debug_log("ALARM SET")
+        now = services.time_service().sim_now
+        update_time = date_and_time.create_date_and_time(
+            hours=SETTINGS.daily_update_time
+        )
+        time_until_first_alarm = now.time_till_next_day_time(update_time)
+        return alarms.add_alarm(owner, time_until_first_alarm, _on_daily_update, repeating=True, repeating_time_span=date_and_time.create_time_span(days=1))
+
+def _clear_alarm():
+    global daily_check_alarm_handle 
+    if daily_check_alarm_handle is not None:
+        alarms.cancel_alarm(daily_check_alarm_handle)
+        daily_check_alarm_handle = None
+
+def _reset_alarm():
+    _clear_alarm()
+    _add_alarm(owner=services.dynasty_service())
+
+# *Hooks*
+
+@inject_to(DynastyService, "_repair_existing_children_for_dynasties")
+def _hook_dynastyservice_repair_existing_children_for_dynastiest(original, self, update_kingdom_titles, *args, **kwargs):
+    if not SETTINGS.global_automatic_repair:
+        return 0
+    repaired = _offspring_repair_check(update_kingdom_titles)
     return repaired
 
 
@@ -1051,7 +1087,6 @@ def _hook_dynasty_service_on_sim_spawned(original, self, *args, **kwargs):
 # This too, also allows for noble successors to be changed.
 @inject_to(RelationshipTracker, "add_relationship_bit")
 def _hook_relationship_tracker_add_relationship_bit(original, self, target_sim_id, bit, *args, **kwargs):
-    debug_log("HOOK: RelationshipTracker.add_relationship_bit fired")
     result = original(self, target_sim_id, bit, *args, **kwargs)
     try:
         kingdom_service = services.kingdom_service()
@@ -1291,3 +1326,25 @@ def _hook_dynastyservice_on_all_households_and_sim_infos_loaded(original, self, 
         debug_log("EXCEPTION in DynastyService.on_all_households_and_sim_infos_loaded hook:\n" + traceback.format_exc())
         return original(self, client, *args, **kwargs)
     return
+
+@inject_to(DynastyService, "on_zone_load")
+def _hook_dynastyservice_on_zone_load(original, self, *args, **kwargs):
+    debug_log("HOOK: DynastyService.on_zone_load fired")
+    result = original(self, *args, **kwargs)
+    try:
+        global daily_check_alarm_handle 
+        _clear_alarm()
+        daily_check_alarm_handle = _add_alarm(self)
+    except:
+        debug_log("EXCEPTION in DynastyService.on_zone_load hook:\n" + traceback.format_exc())
+    return result
+
+@inject_to(DynastyService, "on_zone_unload")
+def _hook_dynastyservice_on_zone_unload(original, self, *args, **kwargs):
+    debug_log("HOOK: DynastyService.on_zone_unload fired")
+    result = original(self, *args, **kwargs)
+    try:
+        _clear_alarm()
+    except:
+        debug_log("EXCEPTION in DynastyService.on_zone_unload hook:\n" + traceback.format_exc())
+    return result

@@ -73,6 +73,12 @@ class GlobalSettings:
         self.whitelist_head_relatives = [int(RelationshipType.DESCENDANT),int(RelationshipType.SPOUSE)] 
         self.whitelist_heir_relatives = [int(RelationshipType.DESCENDANT),int(RelationshipType.SPOUSE)] 
         self.whitelist_member_relatives = []
+
+        # Daily Updates
+        self.enable_daily_updates = True
+        self.daily_update_time = 7
+        self.daily_update_days = [0,1,2,3,4,5,6]
+        self.daily_ea_repair = False
     
     @classmethod
     def migrate_old_config(cls):
@@ -252,6 +258,13 @@ class GlobalSettings:
             "whitelist_member_relatives": ",".join(str(x) for x in self.whitelist_member_relatives),
         }
 
+        config["Daily Updates"] = {
+            "enable_daily_updates": str(self.enable_daily_updates),
+            "daily_update_time": str(self.daily_update_time),
+            "daily_update_days": ",".join(str(x) for x in self.daily_update_days),
+            "daily_ea_repair": str(self.daily_ea_repair),
+        }
+
         try:
             with open(path, "w") as file:
                 config.write(file)
@@ -325,6 +338,11 @@ class GlobalSettings:
             self.whitelist_member_relatives = [int(x) for x in config.get("EA Repair", "whitelist_member_relatives", fallback="9,12").split(",") if x]
 
             self.maximum_level_gap_new_ally = config.getint("Dynasty Relations", "maximum_level_gap_new_ally", fallback=3)
+
+            self.enable_daily_updates = config.getboolean("Daily Updates", "enable_daily_updates", fallback=True)
+            self.daily_update_time = config.getint("Daily Updates", "daily_update_time", fallback=7)
+            self.daily_update_days = [int(x) for x in config.get("Daily Updates", "daily_update_days", fallback="0,1,2,3,4,5,6").split(",") if x]
+            self.daily_ea_repair = config.getboolean("Daily Updates", "daily_ea_repair", fallback=False)
 
             self.save()
             debug_log("Loaded config settings")

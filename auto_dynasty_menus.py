@@ -115,7 +115,7 @@ def show_main_settings_picker(sim_info):
         on_submit=on_submit
     )
 
-def show_number_setting_picker(sim_info,setting_name,parent_sa_id,lower_bound,upper_bound,title_key,text_key,field_title_key):
+def show_number_setting_picker(sim_info,setting_name,parent_sa_id,lower_bound,upper_bound,title_key,text_key,field_title_key,post_setting_change=None):
 
     sim = sim_info.get_sim_instance()
     
@@ -151,8 +151,13 @@ def show_number_setting_picker(sim_info,setting_name,parent_sa_id,lower_bound,up
             debug_log(f"CHANGING SETTING")
             setattr(SETTINGS,setting_name,new_setting)
             SETTINGS.save()
-
+        
         push_sa(sim,parent_sa_id)
+
+        debug_log(f"Still exists?!?: {post_setting_change is not None}")
+
+        if post_setting_change is not None:
+            post_setting_change(new_setting)
 
     show_text_input_dialog(
         sim_info=sim_info,
@@ -197,7 +202,7 @@ def show_enable_disable_picker(sim_info, title_key, text_key, on_submit, is_enab
         on_submit=on_submit
     )
 
-def show_enable_disable_setting_picker(sim_info,setting_name,sa_id,parent_sa_id,title_key,text_key):
+def show_enable_disable_setting_picker(sim_info,setting_name,sa_id,parent_sa_id,title_key,text_key,post_setting_change=None):
 
     sim = sim_info.get_sim_instance()
     
@@ -229,7 +234,11 @@ def show_enable_disable_setting_picker(sim_info,setting_name,sa_id,parent_sa_id,
             debug_log(f"CHANGING SETTING")
             setattr(SETTINGS,setting_name,new_setting)
             SETTINGS.save()
+        
         push_sa(sim,sa_id)
+
+        if post_setting_change is not None:
+            post_setting_change(result_tag)
 
     show_enable_disable_picker(
         sim_info=sim_info,
@@ -286,6 +295,8 @@ def show_dynasty_settings_picker(sim_info):
             push_sa(sim,MOD_SA_IDS["openDynastyBlackSheepSub_SA"])
         elif result_tag == "relationssettings":
             push_sa(sim,MOD_SA_IDS["openDynastyRelationsSub_SA"])
+        elif result_tag == "dailyupdatesettings":
+            push_sa(sim,MOD_SA_IDS["openDynastyDailyUpdatesSub_SA"])
         elif result_tag == "goback":
             push_sa(sim,MOD_SA_IDS["openGlobalSettings_SA"])
 
@@ -361,6 +372,16 @@ def show_dynasty_settings_picker(sim_info):
                 "is_enable": True,
                 "icon": sims4.resources.get_resource_key(
                     0x2232ACF0EE575326,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0xEAA4C61D, # Daily Updates
+                "row_description_key": 0x9AA30B72, # Settings relating to the daily updates performed by this mod.
+                "tag": "dailyupdatesettings",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x083AAA730DCC01F1,
                     0x2F7D0004
                 )
             },
@@ -493,6 +514,88 @@ def show_earepair_settings_picker(sim_info):
         on_submit=on_submit
     )
 
+def show_dailyupdate_settings_picker(sim_info):
+
+    sim = sim_info.get_sim_instance()
+    
+    if not sim:
+        return
+
+    def on_submit(dialog_instance):
+
+        if not dialog_instance.accepted:
+            push_sa(sim,MOD_SA_IDS["openDynastySettings_SA"])
+            return
+
+        result_tag = dialog_instance.get_single_result_tag()
+        services.ui_dialog_service().dialog_cancel(dialog_instance.dialog_id)
+        debug_log(f"PICKER RESULT: {result_tag}")
+
+        if result_tag == "masterdailyupdatesetting":
+            push_sa(sim,MOD_SA_IDS["openGlobalDailyUpdatesEnabler_SA"])
+        elif result_tag == "dailyupdatetime":
+            push_sa(sim,MOD_SA_IDS["openDailyUpdateTimePicker_SA"])
+        elif result_tag == "dailyupdatedays":
+            push_sa(sim,MOD_SA_IDS["openDailyUpdateDayPicker_SA"])
+        elif result_tag == "dailyupdateearepair":
+            push_sa(sim,MOD_SA_IDS["openDailyUpdateEARepairEnabler_SA"])
+        elif result_tag == "goback":
+            push_sa(sim,MOD_SA_IDS["openDynastySettings_SA"])
+
+    show_item_picker_dialog(
+        sim_info=sim_info,
+        title_key=0xD976BDDF, # EA Dynasty Repair Settings
+        text_key=0x8BD94135, # Settings to disable/alter EA's automatic dynasty repair on game load.
+        rows=[
+            {
+                "name_key": 0x3960E07D, # [MASTER] Enable/Disable Daily Updates
+                "row_description_key": 0x960659E9, # Setting to enable/disable automatic daily updates to dynasties.
+                "tag": "masterdailyupdatesetting",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x083AAA730DCC01F1,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x997BD9D3, # Daily Update Time
+                "row_description_key": 0x138693EA, # The in-game time at which a daily update occurs.
+                "tag": "dailyupdatetime",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x9154A048CFFA9B13,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0xF721CF4C, # Daily Update Days
+                "row_description_key": 0x88F6F648, # Which in-game days a daily update can occur on.
+                "tag": "dailyupdatedays",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x083AAA730DCC01F1,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0xABE3C015, # EA Repair on Daily Update
+                "row_description_key": 0x18A2F075, # Enabling this setting will run EA's in-built offspring repair on each daily update.
+                "tag": "dailyupdateearepair",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x0603A67EE530554D,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0xDDC3EC7E, # Go back
+                "tag": "goback",
+                "is_enable": True,
+                "icon": GO_BACK_ICON
+            }
+        ],
+        on_submit=on_submit
+    )
 
 def show_dynastychild_settings_picker(sim_info):
 
@@ -609,7 +712,6 @@ def show_dynastymarriage_settings_picker(sim_info):
         ],
         on_submit=on_submit
     )
-
 
 def show_dynastyheir_settings_picker(sim_info):
 
