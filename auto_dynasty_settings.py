@@ -32,6 +32,8 @@ class GlobalSettings:
 
         self.enforce_dynasty_name = False
 
+        self.retain_courtesy_titles = False
+
         # Dynasty Roles
         self.heir_gender_priority = "none"
         self.familial_connections_become_heir = ["children","spouse","siblings","parents"]
@@ -49,6 +51,7 @@ class GlobalSettings:
 
         self.nobleinherit_minimum_age = int(Age.TEEN)
         self.nobleinherit_career_req = "all"
+        self.retain_title_playedunplayed = ["played","unplayed"]
         
         # Dynasty Family Changes
         self.add_dynasty_children = "headheir"
@@ -152,6 +155,8 @@ class GlobalSettings:
         cls.automatic_remove_rivalries = data.get("automatic_remove_rivalries", True)
 
         cls.enforce_dynasty_name = data.get("enforce_dynasty_name", False)
+
+        cls.retain_courtesy_titles = data.get("retain_courtesy_titles", False)
         
         cls.heir_gender_priority = data.get("heir_gender_priority", "none")
         cls.familial_connections_become_heir = data.get("familial_connections_become_heir", ["children","spouse","siblings","parents"])
@@ -167,6 +172,7 @@ class GlobalSettings:
         cls.minimum_rel_nobleinherit_threshold = data.get("minimum_rel_nobleinherit_threshold", 0)
         cls.nobleinherit_minimum_age = data.get("nobleinherit_minimum_age", Age.TEEN)
         cls.nobleinherit_career_req = data.get("nobleinherit_career_req", "all")
+        cls.retain_title_playedunplayed = data.get("retain_title_playedunplayed", ["played","unplayed"])
 
         cls.add_dynasty_children = data.get("add_dynasty_children", "headheir")
         cls.add_dynasty_spouse = data.get("add_dynasty_spouse", "headheir")
@@ -212,6 +218,7 @@ class GlobalSettings:
             "automatic_remove_alliances": str(self.automatic_remove_alliances),
             "automatic_remove_rivalries": str(self.automatic_remove_rivalries),
             "enforce_dynasty_name": str(self.enforce_dynasty_name),
+            "retain_courtesy_titles": str(self.retain_courtesy_titles),
         }
 
         config["Dynasty Roles"] = {
@@ -227,6 +234,7 @@ class GlobalSettings:
         config["Noble Inherit"] = {
             "nobleinherit_minimum_age": str(self.nobleinherit_minimum_age),
             "nobleinherit_career_req": self.nobleinherit_career_req,
+            "retain_title_playedunplayed": ",".join(str(x) for x in self.retain_title_playedunplayed),
         }
 
         config["Dynasty Relations"] = {
@@ -303,6 +311,7 @@ class GlobalSettings:
 
             self.enforce_dynasty_name = config.getboolean("Enablers", "enforce_dynasty_name", fallback=False)
 
+            self.retain_courtesy_titles = config.getboolean("Enablers", "retain_courtesy_titles", fallback=False)
 
             self.heir_gender_priority = config.get("Dynasty Roles", "heir_gender_priority", fallback="none")
             self.familial_connections_become_heir = config.get("Dynasty Roles","familial_connections_become_heir",fallback="children,spouse,siblings,parents").split(",")
@@ -312,10 +321,9 @@ class GlobalSettings:
             self.add_dynasty_children = config.get("Dynasty Roles", "add_dynasty_children", fallback="headheir")
             self.add_dynasty_spouse = config.get("Dynasty Roles", "add_dynasty_spouse", fallback="headheir")
 
-
             self.nobleinherit_minimum_age = config.getint("Noble Inherit", "nobleinherit_minimum_age", fallback=int(Age.TEEN))
             self.nobleinherit_career_req = config.get("Noble Inherit", "nobleinherit_career_req", fallback="all")
-
+            self.retain_title_playedunplayed = config.get("Noble Inherit", "retain_title_playedunplayed", fallback="played,unplayed").split(",")
 
             self.minimum_rel_heir_threshold = config.getint("Thresholds", "minimum_rel_heir_threshold", fallback=10)
             self.maximum_rel_blacksheep_threshold = config.getint("Thresholds", "maximum_rel_blacksheep_threshold", fallback=-60)

@@ -831,7 +831,7 @@ def show_dynastyblacksheep_settings_picker(sim_info):
 
         if not dialog_instance.accepted:
             push_sa(sim,MOD_SA_IDS["openDynastySettings_SA"])
-            return#
+            return
         
         result_tag = dialog_instance.get_single_result_tag()
 
@@ -927,6 +927,8 @@ def show_noble_settings_picker(sim_info):
             push_sa(sim,MOD_SA_IDS["openNobleInheritanceMinimumAgePicker_SA"])
         elif result_tag == "noblecareerreqs":
             push_sa(sim,MOD_SA_IDS["openNobleInheritanceCareerReqsPicker_SA"])
+        elif result_tag == "courtesytitles":
+            push_sa(sim,MOD_SA_IDS["openCourtesySettings_SA"])
         elif result_tag == "goback":
             push_sa(sim,MOD_SA_IDS["openGlobalSettings_SA"])
 
@@ -976,6 +978,16 @@ def show_noble_settings_picker(sim_info):
                 )
             },
             {
+                "name_key": 0xCBB44E66, # Courtesy Titles Settings
+                "row_description_key": 0xBDEF843A, # Settings related to retaining children courtesy titles such as Lord, Lady, Prince and Princess.
+                "tag": "noblecareerreqs",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x52B9A5EAFDD7EC29,
+                    0x2F7D0004
+                )
+            },
+            {
                 "name_key": 0xDDC3EC7E, # Go back
                 "tag": "goback",
                 "is_enable": True,
@@ -997,7 +1009,7 @@ def show_dynastyrelations_settings_picker(sim_info):
 
         if not dialog_instance.accepted:
             push_sa(sim,MOD_SA_IDS["openDynastySettings_SA"])
-            return#
+            return
         
         result_tag = dialog_instance.get_single_result_tag()
 
@@ -1068,7 +1080,7 @@ def show_dynastyrelations_alliances_picker(sim_info):
 
         if not dialog_instance.accepted:
             push_sa(sim,MOD_SA_IDS["openDynastyRelationsSub_SA"])
-            return#
+            return
         
         result_tag = dialog_instance.get_single_result_tag()
 
@@ -1187,7 +1199,7 @@ def show_dynastyrelations_rivalries_picker(sim_info):
 
         if not dialog_instance.accepted:
             push_sa(sim,MOD_SA_IDS["openDynastyRelationsSub_SA"])
-            return#
+            return
         
         result_tag = dialog_instance.get_single_result_tag()
 
@@ -1257,6 +1269,65 @@ def show_dynastyrelations_rivalries_picker(sim_info):
                 "is_enable": True,
                 "icon": sims4.resources.get_resource_key(
                     0x29ED7EC6BBB9429C,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0xDDC3EC7E, # Go back
+                "tag": "goback",
+                "is_enable": True,
+                "icon": GO_BACK_ICON
+            },
+        ],
+        on_submit=on_submit
+    )
+
+
+def show_nobleinheritance_courtesy_settings_picker(sim_info):
+
+    sim = sim_info.get_sim_instance()
+    
+    if not sim:
+        return
+
+    def on_submit(dialog_instance):
+
+        if not dialog_instance.accepted:
+            push_sa(sim,MOD_SA_IDS["openNobleSettings_SA"])
+            return
+        
+        result_tag = dialog_instance.get_single_result_tag()
+
+        debug_log(f"PICKER RESULT: {result_tag}")
+        if result_tag == "mastercourtesysetting":
+            push_sa(sim,MOD_SA_IDS[""])
+        elif result_tag == "playedunplayedcourtesy":
+            push_sa(sim,MOD_SA_IDS["openCourtesyTitlePlayedUnplayed_SA"])
+        elif result_tag == "goback":
+            push_sa(sim,MOD_SA_IDS["openNobleSettings_SA"])
+
+    show_item_picker_dialog(
+        sim_info=sim_info,
+        title_key=0xCBB44E66, # Courtesy Titles Settings
+        text_key=0xBDEF843A, # Settings related to retaining children courtesy titles such as Lord, Lady, Prince and Princess.
+        rows=[
+            {
+                "name_key": 0xEE6E513F, # [MASTER] Enable/Disable Courtesy Title Retention
+                "row_description_key": 0xAF5831CB, # Disabling this setting will prevent the mod from keeping children visual titles after the noble parent dies. (DISABLED BY DEFAULT)
+                "tag": "mastercourtesysetting",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x52B9A5EAFDD7EC29,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x904126EC, # Played/Unplayed Courtesy Titles
+                "row_description_key": 0x94F15942, # Setting to set if played/unplayed noble children can retain visual titles.
+                "tag": "playedunplayedcourtesy",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x37EF3672EAA28DA8,
                     0x2F7D0004
                 )
             },

@@ -25,9 +25,12 @@ from relationships.global_relationship_tuning import RelationshipGlobalTuning
 from relationships.relationship_enums import RelationshipType
 
 from interactions.utils.death import DeathTracker
+from interactions.utils.death_enums import DeathType
 
+from kingdom.kingdom import _kingdom
 from kingdom.kingdom_service import KingdomService
 from kingdom.kingdom_tuning import KingdomTuning
+from kingdom.kingdom_enums import KingdomPriority, KingdomPronounsGender, KingdomTitlePriority
 
 from sims.genealogy_tracker import GenealogyTracker
 from sims.outfits.outfit_enums import BodyType, OutfitCategory
@@ -51,6 +54,27 @@ logger = sims4.log.Logger('Dynasty')
 daily_check_alarm_handle = None
 
 # *Functions*
+
+import services
+
+def debug_kingdom_titles():
+    kingdom_service = services.kingdom_service()
+
+    for neighborhood_id, neighborhood in kingdom_service._kingdom_data.items():
+        for sim_id, kingdom_sim in neighborhood.sims.items():
+            sim_info = services.sim_info_manager().get(sim_id)
+
+            if sim_info is None:
+                continue
+
+            debug_log(
+                f"Sim: {sim_info.full_name} | "
+                f"Kingdom level: {kingdom_sim.level} | "
+                f"Priority: {kingdom_sim.priority} | "
+                f"Noble career level: {kingdom_service.get_noble_career_user_level(sim_id)} | "
+                f"Title key: {sim_info.get_name_prefix_key()} | "
+                f"Title string: {sim_info.get_name_prefix_string()}"
+            )
 
 # Function Name: _get_sim_dynasty()
 # Description: Takes a sim's SimInfo and checks if they're currently in a dynasty. The dynasty object is then returned if one is found, otherwise a None object is returned.
@@ -294,10 +318,15 @@ def _remove_fulltime_careers(sim_info: SimInfo) -> bool:
 # Function Name: _add_noble_career()
 # Description: Adds the noble career to a sim. For some reason, the in-built EA function does not work for this use-case.
 def _add_noble_career(sim_info: SimInfo) -> bool:
+    kingdom_service = services.kingdom_service()
+
     if not sim_info:
         return False
-    
-    kingdom_service = services.kingdom_service()
+
+    (sim_data, _, _, _) = kingdom_service.get_common_data(sim_info)
+
+    if not sim_data:
+        return False
 
     if kingdom_service.has_noble_career(sim_info):
         return False
@@ -477,16 +506,25 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
 # - Must not have a higher noble rank than the noble sim.
 
 # If there are no qualifying successor sims found, the noble rank will be lost unless manually reclaimed by the player.
-def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
+def _calculate_noble_successor(noble_sim_info: SimInfo, career_level) -> SimInfo:
     if SETTINGS.global_noble_mod_enabler is not True:
         return
 
+    family_tree_service = services.family_tree_service()
     kingdom_service = services.kingdom_service()
 
     if noble_sim_info is None:
         return
 
-    if noble_sim_info.household.is_player_household == True or not kingdom_service.has_noble_career(noble_sim_info) or kingdom_service.get_sim_neighborhood_id(noble_sim_info) is None:
+    debug_log(f"Starting calculations for {noble_sim_info.first_name}'s title inheritance.")
+
+    noble_neighborhood_id = kingdom_service.get_sim_neighborhood_id(noble_sim_info)
+
+    debug_log(f"Neigborhood ID: {noble_neighborhood_id}")
+
+    kingdom_data = kingdom_service.get_or_create_neighborhood_data(noble_neighborhood_id) if noble_neighborhood_id is not None else None
+
+    if noble_sim_info.household.is_player_household == True or noble_neighborhood_id is None:
         return
 
     noble_successor_sim_info = None
@@ -496,10 +534,15 @@ def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
         if target_sim_info is None:
             return False
 
+        sim_data = kingdom_service.get_sim_data(kingdom_data, target_sim_info.id)
+
+        if sim_data is None:
+            return False
+
         lower_noble_rank = True
 
         if kingdom_service.has_noble_career(target_sim_info):
-            if kingdom_service.get_noble_career_level(target_sim_info.id) >= kingdom_service.get_noble_career_level(noble_sim_info.id):
+            if kingdom_service.get_noble_career_level(target_sim_info.id) >= career_level:
                 lower_noble_rank = False
 
         minimum_age = Age(SETTINGS.nobleinherit_minimum_age)
@@ -514,7 +557,7 @@ def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
         debug_log(f"Meets age requirement: {minimum_age.sequential_value <= target_sim_info.age.sequential_value}")
         debug_log(f"Lower noble rank: {lower_noble_rank}")
 
-        return not headchild_rel < SETTINGS.minimum_rel_nobleinherit_threshold and not target_sim_info.is_dead and kingdom_service.get_sim_neighborhood_id(noble_sim_info) == kingdom_service.get_sim_neighborhood_id(target_sim_info) and minimum_age.sequential_value <= target_sim_info.age.sequential_value and lower_noble_rank
+        return not headchild_rel < SETTINGS.minimum_rel_nobleinherit_threshold and not target_sim_info.is_dead and kingdom_service.get_sim_neighborhood_id(noble_sim_info) == kingdom_service.get_sim_neighborhood_id(target_sim_info) and minimum_age.sequential_value <= target_sim_info.age.sequential_value and lower_noble_rank and not kingdom_service.is_inheriting_sim(target_sim_info)
 
     def _meets_career_reqs(target_sim_info: SimInfo) -> bool:
         if target_sim_info is None:
@@ -554,9 +597,7 @@ def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
                 debug_log(f"Chosen successor has job: {not curr_inheriter_unemployed}")
 
 
-            if curr_inheriter_unemployed:
-                return False
-            elif has_work_career and noble_successor_sim_info is not None:
+            if curr_inheriter_unemployed or has_work_career and noble_successor_sim_info is not None:
                 return False
         elif SETTINGS.nobleinherit_career_req == "all":
             if noble_successor_sim_info is not None:
@@ -566,8 +607,7 @@ def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
 
 
     noble_dynasty = _get_sim_dynasty(noble_sim_info)
-    
-    noble_children_sim_infos = _order_relative_list(list(noble_sim_info.genealogy.get_children_sim_ids_gen()))
+    noble_children_sim_infos = _order_relative_list(family_tree_service.get_family_relation_sim_ids(noble_sim_info.id,RelationshipType.DESCENDANT))
 
     # Checking dynasty heirs.                                
     if noble_dynasty is not None:
@@ -577,10 +617,14 @@ def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
                 if (heir_sim_info in noble_children_sim_infos or heir_sim_info.id == noble_sim_info.spouse_sim_id) and _can_be_successor(heir_sim_info) and _meets_career_reqs(heir_sim_info):
                     noble_successor_sim_info = heir_sim_info
 
-    # Checking children.                              
-    for child_sim_info in noble_children_sim_infos:
-        if _can_be_successor(child_sim_info) and _meets_career_reqs(child_sim_info):
-            noble_successor_sim_info = child_sim_info
+    # Checking children.
+    if noble_successor_sim_info is None:                            
+        for child_sim_info in noble_children_sim_infos:
+            debug_log(f"Child: {child_sim_info.first_name if child_sim_info is not None else None}")
+            if child_sim_info is not None and _can_be_successor(child_sim_info) and _meets_career_reqs(child_sim_info):
+                debug_log(f"Can be successor: {_can_be_successor(child_sim_info)}. Career reqs: {_meets_career_reqs(child_sim_info)}.")
+                noble_successor_sim_info = child_sim_info
+                break
 
     # Checking spouses.
     if noble_successor_sim_info is None:
@@ -592,9 +636,7 @@ def _calculate_noble_successor(noble_sim_info: SimInfo) -> None:
             if _can_be_successor(noble_spouse_sim_info) and _meets_career_reqs(noble_spouse_sim_info):
                 noble_successor_sim_info = noble_spouse_sim_info
 
-    # Setting as successor if a qualifying sim is found.
-    if noble_successor_sim_info is not None:
-        _set_sim_as_noble_successor(noble_sim_info,noble_successor_sim_info)
+    return noble_successor_sim_info
 
         
 # Function Name: _calculate_dynasty_black_sheeps()
@@ -802,6 +844,7 @@ def _on_sim_marriage(sim_info,spouse_sim_info):
 
         _sync_dynasty_names(sim_info,spouse_sim_info)
 
+
 def _sync_dynasty_names(sim_info,spouse_sim_info,dynasty_save_data=None):
     if (SETTINGS.enforce_dynasty_name and SETTINGS.global_dynasty_mod_enabler) is not True:
         return
@@ -958,6 +1001,7 @@ def _calculate_dynasty_relations(main_dynasty: Dynasty) -> None:
             debug_log(f"Adding {target_dynasty.name} as {main_dynasty.name} rival.")
             dynasty_service.add_rivalry(main_dynasty,target_dynasty)
 
+
 def _offspring_repair_check(update_kingdom_titles=False):
     repaired = 0
     sim_info_manager = services.sim_info_manager()
@@ -979,6 +1023,7 @@ def _offspring_repair_check(update_kingdom_titles=False):
                                 kingdom_service.update_sim_info_title(child_sim_info)
                             repaired += 1
     return repaired
+
 
 def _on_daily_update(owner):
     global daily_check_alarm_handle
@@ -1019,6 +1064,7 @@ def _on_daily_update(owner):
     else:
         _clear_alarm()
 
+
 def _add_alarm(owner):
     if SETTINGS.enable_daily_updates:
         debug_log("ALARM SET")
@@ -1029,15 +1075,33 @@ def _add_alarm(owner):
         time_until_first_alarm = now.time_till_next_day_time(update_time)
         return alarms.add_alarm(owner, time_until_first_alarm, _on_daily_update, repeating=True, repeating_time_span=date_and_time.create_time_span(days=1))
 
+
 def _clear_alarm():
     global daily_check_alarm_handle 
     if daily_check_alarm_handle is not None:
         alarms.cancel_alarm(daily_check_alarm_handle)
         daily_check_alarm_handle = None
 
+
 def _reset_alarm():
     _clear_alarm()
     _add_alarm(owner=services.dynasty_service())
+
+
+def _clear_persistent_noble_traits(sim_info):
+    trait_manager = services.get_instance_manager(sims4.resources.Types.TRAIT)
+    for persistent_noble_trait_id in constants.PARENT_NOBLE_TRAIT_IDS:
+        persistent_noble_trait = trait_manager.get(persistent_noble_trait_id)
+        if persistent_noble_trait is not None:
+            sim_info.remove_trait(persistent_noble_trait)
+
+
+def _get_persistent_noble_trait_level(sim_info):
+    trait_manager = services.get_instance_manager(sims4.resources.Types.TRAIT)
+    for level in sorted(constants.PARENT_NOBLE_TRAIT_IDS, reverse=True):
+        persistent_noble_trait = trait_manager.get(constants.PARENT_NOBLE_TRAIT_IDS[level])
+        if persistent_noble_trait is not None and sim_info.has_trait(persistent_noble_trait):
+            return level
 
 # *Hooks*
 
@@ -1090,10 +1154,10 @@ def _hook_relationship_tracker_add_relationship_bit(original, self, target_sim_i
     result = original(self, target_sim_id, bit, *args, **kwargs)
     try:
         kingdom_service = services.kingdom_service()
-        
+
         sim_info = self._sim_info
         target_sim_info = services.sim_info_manager().get(target_sim_id)
-        
+
         if sim_info is not None and target_sim_info is not None:
             sim_dynasty = _get_sim_dynasty(sim_info)
             target_dynasty = _get_sim_dynasty(target_sim_info)
@@ -1103,15 +1167,6 @@ def _hook_relationship_tracker_add_relationship_bit(original, self, target_sim_i
                     _calculate_dynasty_black_sheeps(sim_dynasty)
                 elif target_dynasty is not None:
                     _calculate_dynasty_relations(sim_dynasty)
-
-            sim_a_is_noble = kingdom_service.has_noble_career(sim_info)
-            sim_b_is_noble = kingdom_service.has_noble_career(target_sim_info)
-            
-            if _are_sims_related_or_married(sim_info,target_sim_info) and (sim_a_is_noble or sim_b_is_noble):
-                if sim_a_is_noble:
-                    _calculate_noble_successor(sim_info)
-                if sim_b_is_noble:
-                    _calculate_noble_successor(target_sim_info)
     except:
         debug_log("EXCEPTION in RelationshipTracker.add_relationship_bit hook:\n" + traceback.format_exc())
     return result
@@ -1179,70 +1234,52 @@ def _hook_dynasty_set_head(original, self, *args, **kwargs):
         debug_log("EXCEPTION in Dynasty.set_head hook:\n" + traceback.format_exc())
     return result
 
-
-# Runs after a noble sim with an inheriting sim dies.
-# Sets up the sim to become a valid target for inheritance.
-# Removes the sim's existing career and gives them the noble career if they live in the same neighbourhood, aren't dead and are at least a teenager.
-# This should fulfil the requirements needed for EA to process the inheriting sim after this hook so that they inherit the noble rank.
-@inject_to(KingdomService, "process_inheriting_sim")
-def _hook_kingdomservice_process_inhertiing_sim(original, self, neighborhood_id, noble_sim_info, inheriting_sim_id, *args, **kwargs):
-    debug_log("HOOK: KingdomService.process_inheriting_sim fired")
-    try:
-        if SETTINGS.global_noble_mod_enabler != True:
-            return
-
-        if neighborhood_id is not None:
-            debug_log("**NOBLE DEATH**")
-            debug_log(f"Noble Sim Name: {noble_sim_info.first_name} {noble_sim_info.last_name}")
-            
-            inheriting_sim_info = services.sim_info_manager().get(inheriting_sim_id)
-
-            if inheriting_sim_info is not None:
-                debug_log(f"Inheriting Sim Name: {inheriting_sim_info.first_name} {inheriting_sim_info.last_name}")
-                
-                if noble_sim_info.household.is_player_household != True and inheriting_sim_info.household.is_player_household != True:
-                    debug_log(f"Inheriting Sim Lives in Kingdom: {self.get_sim_neighborhood_id(inheriting_sim_info) == neighborhood_id}")
-                    
-                    if self.get_sim_neighborhood_id(inheriting_sim_info) == neighborhood_id and not inheriting_sim_info.is_dead and inheriting_sim_info.age >= Age.TEEN:
-                        if self.has_noble_career(inheriting_sim_info) == False:
-                            debug_log(f"Remove {inheriting_sim_info.first_name}'s Adult Careers")
-
-                            if _remove_fulltime_careers(inheriting_sim_info):
-                                debug_log(f"Giving {inheriting_sim_info.first_name} Noble Career")
-                                _add_noble_career(inheriting_sim_info)
-    except:
-        debug_log("EXCEPTION in KingdomService.process_inheriting_sim hook:\n" + traceback.format_exc())
-        
-    result = original(self, neighborhood_id, noble_sim_info, inheriting_sim_id, *args, **kwargs)
-    return result
-
-
 # Runs before a sim's death type is set. (Usually before the sim dies)
 # Used to calculate the noble successor just before the noble sim dies, in case the current inheriting sim no longer qualifies.
 # This is done to lower the risk of the noble rank being lost, and carried out over generations.
 @inject_to(DeathTracker, "set_death_type")
-def _hook_deathtracker_set_death_type(original, self, *args, **kwargs):
+def _hook_deathtracker_set_death_type(original, self, death_type, *args, **kwargs):
     debug_log("HOOK: DeathTracker.set_death_type fired")
     try:
         kingdom_service = services.kingdom_service()
-        
+        trait_manager = services.get_instance_manager(sims4.resources.Types.TRAIT)
+
         dying_sim_info = self._sim_info
+
         if dying_sim_info is not None:
-            debug_log("**SIM ABOUT TO DIE**")
-            debug_log(f"Dying Sim Name: {dying_sim_info.first_name} {dying_sim_info.last_name}")
+            is_dying = death_type != DeathType.NONE or death_type is not None
 
-            is_noble = kingdom_service.has_noble_career(dying_sim_info)
+            if is_dying:
+                debug_log("**SIM ABOUT TO DIE**")
+                debug_log(f"Dying Sim Name: {dying_sim_info.first_name} {dying_sim_info.last_name}")
 
-            debug_log(f"Is Noble: {is_noble}")
-            
-            if dying_sim_info.household.is_player_household is not True and is_noble == True:
-                _calculate_noble_successor(dying_sim_info)
+                is_noble = kingdom_service.has_noble_career(dying_sim_info)
+                noble_level = kingdom_service.get_noble_career_level(dying_sim_info.id)
+
+                debug_log(f"Is Noble: {is_noble}")
+                
+                if is_noble == True:
+                    _clear_persistent_noble_traits(dying_sim_info)
+
+                    persistent_noble_trait_id = constants.PARENT_NOBLE_TRAIT_IDS[noble_level]
+                    persistent_noble_trait = trait_manager.get(persistent_noble_trait_id)
+
+                    dying_sim_info.add_trait(persistent_noble_trait)
+
+                    debug_log(f"Gave {dying_sim_info.first_name} the persistent noble trait for level {noble_level}. Trait ID: {constants.PARENT_NOBLE_TRAIT_IDS[noble_level]}. Trait exists: {persistent_noble_trait is not None}. Sim has trait: {dying_sim_info.has_trait(persistent_noble_trait)}.")
     except:
         debug_log("EXCEPTION in DeathTracker.set_death_type hook:\n" + traceback.format_exc())
         
-    result = original(self, *args, **kwargs)
+    result = original(self, death_type, *args, **kwargs)
+
     return result
 
+@inject_to(DeathTracker, "clear_death_type")
+def _hook_deathtracker_set_death_type(original, self, *args, **kwargs):
+    result = original(self,*args,**kwargs)
+    if self._sim_info and not self._sim_info.is_dead:
+        _clear_persistent_noble_traits(self._sim_info)
+    return result
 
 # Runs when a new career is added.
 # Checks if the sim with the new career has the noble career (probably a better way to do this, but it works)
@@ -1262,7 +1299,6 @@ def _hook_careertracker_add_career(original, self, *args, **kwargs):
             if sim_info.household.is_player_household != True and is_noble == True:
                 debug_log("**NOBLE SIM JOINED CAREER**")
                 debug_log(f"Sim Name: {sim_info.first_name} {sim_info.last_name}")
-                _calculate_noble_successor(sim_info)
     except:
         debug_log("EXCEPTION in CareerTracker.add_career hook:\n" + traceback.format_exc())
         
@@ -1327,6 +1363,7 @@ def _hook_dynastyservice_on_all_households_and_sim_infos_loaded(original, self, 
         return original(self, client, *args, **kwargs)
     return
 
+
 @inject_to(DynastyService, "on_zone_load")
 def _hook_dynastyservice_on_zone_load(original, self, *args, **kwargs):
     debug_log("HOOK: DynastyService.on_zone_load fired")
@@ -1335,9 +1372,11 @@ def _hook_dynastyservice_on_zone_load(original, self, *args, **kwargs):
         global daily_check_alarm_handle 
         _clear_alarm()
         daily_check_alarm_handle = _add_alarm(self)
+        debug_kingdom_titles()
     except:
         debug_log("EXCEPTION in DynastyService.on_zone_load hook:\n" + traceback.format_exc())
     return result
+
 
 @inject_to(DynastyService, "on_zone_unload")
 def _hook_dynastyservice_on_zone_unload(original, self, *args, **kwargs):
@@ -1348,3 +1387,203 @@ def _hook_dynastyservice_on_zone_unload(original, self, *args, **kwargs):
     except:
         debug_log("EXCEPTION in DynastyService.on_zone_unload hook:\n" + traceback.format_exc())
     return result
+
+
+@inject_to(KingdomService, "set_sim_title")
+def _hook_kingdomservice_set_sim_title(original, self, sim_info:'SimInfo', neighborhood_id:'int', kingdom_sim:'_kingdom.KingdomSim', *args, **kwargs) -> 'None':
+    debug_log("HOOK: KingdomService.set_sim_title fired")
+    debug_log(f"Setting {sim_info.first_name}'s title.")
+    try:
+        family_tree_service = services.family_tree_service()
+
+        title = None
+        gender = self.get_sim_gender_by_pronouns(sim_info)
+        priority = KingdomTitlePriority.TERTIARY if kingdom_sim.priority == KingdomPriority.TERTIARY else KingdomTitlePriority.PRIMARY_SECONDARY
+        if neighborhood_id in self._kingdom_titles_cache and kingdom_sim.level in self._kingdom_titles_cache[neighborhood_id] and priority in self._kingdom_titles_cache[neighborhood_id][kingdom_sim.level] and gender in self._kingdom_titles_cache[neighborhood_id][kingdom_sim.level][priority]:
+            debug_log("CACHE ROUTE")
+            sim_info.set_name_prefix_string(self._kingdom_titles_cache[neighborhood_id][kingdom_sim.level][priority][gender])
+            sim_info.set_name_prefix_key(0)
+            return
+        level_data = KingdomTuning.DEFAULT_KINGDOM_TITLES.get(kingdom_sim.level + 1, None)
+        if level_data:
+            debug_log("LEVEL ROUTE")
+            priority_data = level_data.tertiary_data if kingdom_sim.priority == KingdomPriority.TERTIARY else level_data.primary_data
+            if gender == KingdomPronounsGender.MALE:
+                title = priority_data.male_title
+            elif gender == KingdomPronounsGender.FEMALE:
+                title = priority_data.female_title
+            else:
+                title = priority_data.neutral_title
+
+        if title is None:
+            debug_log(f"Checking sim {sim_info.first_name} for persistent parent noble titles.")
+
+            priority = KingdomTitlePriority.TERTIARY
+            highest_parent_persistent_level = None
+            parents = family_tree_service.get_family_relation_sim_ids(sim_info.id,RelationshipType.PARENT)
+            for parent_id in parents:
+                parent_sim_info = sim_info = services.sim_info_manager().get(parent_id)
+                if parent_sim_info is None or not parent_sim_info.is_dead:
+                    continue
+                highest_parent_persistent_level = _get_persistent_noble_trait_level(parent_sim_info)
+            if highest_parent_persistent_level is not None:
+                debug_log(f"Highest parent noble rank level found: {str(highest_parent_persistent_level)}.")
+                parent_kingdom_sim_level = highest_parent_persistent_level - 1
+                if neighborhood_id in self._kingdom_titles_cache and parent_kingdom_sim_level in self._kingdom_titles_cache[neighborhood_id] and priority in self._kingdom_titles_cache[neighborhood_id][parent_kingdom_sim_level] and gender in self._kingdom_titles_cache[neighborhood_id][parent_kingdom_sim_level][priority]:
+                    debug_log(f"{sim_info.first_name} {sim_info.last_name} has a peristent noble parent who was at noble level {str(highest_parent_persistent_level)}. They keep the title {self._kingdom_titles_cache[neighborhood_id][kingdom_sim.level][priority][gender]}.")
+                    sim_info.set_name_prefix_string(self._kingdom_titles_cache[neighborhood_id][kingdom_sim.level][priority][gender])
+                    sim_info.set_name_prefix_key(0)
+                    return
+                else:
+                    level_data = KingdomTuning.DEFAULT_KINGDOM_TITLES.get(highest_parent_persistent_level, None)
+                    if level_data:
+                        priority_data = level_data.tertiary_data
+                        if gender == KingdomPronounsGender.MALE:
+                            title = priority_data.male_title
+                        elif gender == KingdomPronounsGender.FEMALE:
+                            title = priority_data.female_title
+                        else:
+                            title = priority_data.neutral_title
+                        debug_log(f"{sim_info.first_name} {sim_info.last_name} has a peristent noble parent who was at noble level {str(highest_parent_persistent_level)}. They have a title with has {title.hash if title is not None else 0}.")
+        
+        debug_log(F"Title hash: {title.hash if title is not None else 0}")
+
+        sim_info.set_name_prefix_key(title.hash if title is not None else 0)
+        sim_info.set_name_prefix_string('')
+        return None
+    except:
+        debug_log("EXCEPTION in KingdomService.set_sim_title hook:\n" + traceback.format_exc())
+    return original(self, sim_info, neighborhood_id, kingdom_sim, *args, **kwargs)
+
+
+@inject_to(KingdomService, "on_quit")
+def _hook_kingdomservice_on_quit(original, self, sim_info:'SimInfo', career_level:'int', *args, **kwargs) -> 'None':
+    debug_log("HOOK: KingdomService.on_quit fired")
+    try:
+        family_tree_service = services.family_tree_service()
+
+        if sim_info.id in self._sim_career_levels:
+            del self._sim_career_levels[sim_info.id]
+        neighborhood_id = self.get_sim_neighborhood_id(sim_info)
+        if neighborhood_id is None:
+            return
+        (kingdom_sim, family, affected_sim_ids, neighborhood_data) = self.get_common_data(sim_info)
+
+        is_played = sim_info.household.is_player_household
+        retain_titles = SETTINGS.global_noble_mod_enabler and SETTINGS.retain_courtesy_titles and ("played" in SETTINGS.retain_title_playedunplayed and is_played) or ("unplayed" in SETTINGS.retain_title_playedunplayed and not is_played)
+        
+        inheriting_sim_id = kingdom_sim.inheriting_sim_id
+        if inheriting_sim_id is None or inheriting_sim_id == 0:
+            inheritor_sim_info = _calculate_noble_successor(sim_info,career_level)
+            if inheritor_sim_info is not None:
+                self.set_inheriting_sim(sim_info,inheritor_sim_info)
+                inheriting_sim_id = inheritor_sim_info.id
+
+        debug_log(f"Sim ID: {inheriting_sim_id}")
+        inheriting_sim_info = services.sim_info_manager().get(inheriting_sim_id)
+
+        debug_log(f"Chosen inheritor: {inheriting_sim_info.first_name}.")
+
+        if retain_titles:
+            persistent_noble_level = _get_persistent_noble_trait_level(sim_info)
+
+            debug_log(f"{sim_info.first_name} had a persistent level of {persistent_noble_level}. Is currently dead: {sim_info.is_dead}.")
+
+            if persistent_noble_level is not None:
+                for sim_data in family:
+                    child_id = sim_data["sim_id"]
+                    child_info = services.sim_info_manager().get(sim_data["sim_id"])
+
+                    parents = family_tree_service.get_family_relation_sim_ids(child_id,RelationshipType.PARENT)
+                    debug_log(f"Checking Child {child_info.first_name}")
+                    debug_log(f"Has noble as parent: {sim_info.id in parents}")
+                    debug_log(f"Is not inheritor: {inheriting_sim_id != child_id}")
+                    debug_log(f"Affected sim: {child_id in affected_sim_ids}")
+                    debug_log(f"Is in family list: {sim_data in family}")
+                    if sim_info.id in parents and inheriting_sim_id != child_id and child_id in affected_sim_ids and sim_data in family:
+                        affected_sim_ids.remove(child_id)
+                        family.remove(sim_data)
+        
+        (new_kingdoms, old_inheriting_sim_id) = _kingdom.sim_death_or_abdicate(family, affected_sim_ids, neighborhood_data, sim_info.id)
+
+        if retain_titles:
+            repaired_kingdoms = []
+            for new_kingdom in new_kingdoms:
+                if new_kingdom.neighborhood_id == neighborhood_id:
+                    parent_noble_level = _get_persistent_noble_trait_level(sim_info)
+                    if _get_persistent_noble_trait_level(sim_info) is not None and new_kingdom is not None:
+                        sims = new_kingdom.sims
+                        affected_children = False
+                        children = family_tree_service.get_family_relation_sim_ids(sim_info.id,RelationshipType.DESCENDANT)
+                        for child_sim_id in children:
+                            child_sim_info = services.sim_info_manager().get(child_sim_id)
+                            if child_sim_id == inheriting_sim_id:
+                                continue
+                            child_neighborhood_id = self.get_sim_neighborhood_id(child_sim_info)
+                            if not child_sim_info.is_dead and not self.has_noble_career(child_sim_info) and not sims.get(child_sim_id) and child_neighborhood_id == neighborhood_id:
+                                child_kingdom_sim = _kingdom.KingdomSim(child_sim_id, parent_noble_level - 1, KingdomPriority.TERTIARY, 0)
+                                new_kingdom.sims[child_sim_id] = child_kingdom_sim
+                                affected_children = True
+                repaired_kingdoms.append(new_kingdom)
+            new_kingdoms = repaired_kingdoms
+
+        if inheriting_sim_info is not None and not self.has_noble_career(inheriting_sim_info):
+            if _remove_fulltime_careers(inheriting_sim_info):
+                _add_noble_career(inheriting_sim_info)
+
+        has_inherited = False
+        if inheriting_sim_id is not None:
+            debug_log(f"Sim Info Exists: {inheriting_sim_info is not None}")
+            debug_log(f"Same neigborhood ID: {self.get_sim_neighborhood_id(inheriting_sim_info) == neighborhood_id}")
+            debug_log(f"Inheriting Sim original career level: {self.get_noble_career_level(inheriting_sim_info.id)}")
+            has_inherited = self.process_inheriting_sim(neighborhood_id, sim_info, inheriting_sim_id, career_level)
+            debug_log(f"Has inherited: {has_inherited}.")
+        if not has_inherited:
+            self.process_career_level_inheriting_candidates(neighborhood_id, sim_info, career_level)
+        self.remove_sim_from_available_titles_candidates(sim_info)
+        if sim_info.id in self._sim_virtual_neighborhoods:
+            del self._sim_virtual_neighborhoods[sim_info.id]
+        if sim_info.id in self._sim_career_levels:
+            del self._sim_career_levels[sim_info.id]
+        return None
+    except:
+        debug_log("EXCEPTION in KingdomService.on_quit hook:\n" + traceback.format_exc())
+    return original(self, sim_info, career_level, *args, **kwargs)
+
+@inject_to(KingdomService, "update_sim_info_title")
+def _hook_kingdomservice_update_sim_info_title(original, self, sim_info:'SimInfo') -> 'None':
+    family_tree_service = services.family_tree_service()
+    kingdom_data = self.get_sim_kingdom_neighborhood_data(sim_info)
+    if kingdom_data is None:
+        is_played = sim_info.household.is_player_household
+        retain_titles = SETTINGS.global_noble_mod_enabler and SETTINGS.retain_courtesy_titles and ("played" in SETTINGS.retain_title_playedunplayed and is_played) or ("unplayed" in SETTINGS.retain_title_playedunplayed and not is_played)
+
+        if retain_titles:
+            highest_parent_persistent_level = None
+            parents = family_tree_service.get_family_relation_sim_ids(sim_info.id,RelationshipType.PARENT)
+            for parent_id in parents:
+                parent_sim_info = sim_info = services.sim_info_manager().get(parent_id)
+                if parent_sim_info is None or not parent_sim_info.is_dead:
+                    continue
+                highest_parent_persistent_level = _get_persistent_noble_trait_level(parent_sim_info)
+
+            if highest_parent_persistent_level:
+                neighborhood_id = self.get_sim_neighborhood_id(sim_info)
+                kingdom_data = self.get_or_create_neighborhood_data(neighborhood_id)
+                if kingdom_data:
+                    child_kingdom_sim = self.get_sim_data(kingdom_data, sim_info.id)
+                    if child_kingdom_sim is None:
+                        child_kingdom_sim = _kingdom.KingdomSim(sim_info.id, highest_parent_persistent_level - 1, KingdomPriority.TERTIARY, 0)
+                        kingdom_data.sims[sim_info.id] = child_kingdom_sim
+                    self.set_sim_title(sim_info, kingdom_data.neighborhood_id, child_kingdom_sim)
+                    return
+        if kingdom_data is None:
+            sim_info.set_name_prefix_key(0)
+            sim_info.set_name_prefix_string('')
+            return
+    kingdom_sim = self.get_sim_data(kingdom_data, sim_info.id)
+    if kingdom_sim is None:
+        sim_info.set_name_prefix_key(0)
+        sim_info.set_name_prefix_string('')
+        return
+    self.set_sim_title(sim_info, kingdom_data.neighborhood_id, kingdom_sim)

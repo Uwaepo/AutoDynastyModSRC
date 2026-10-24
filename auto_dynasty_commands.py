@@ -13,7 +13,7 @@ from .utils.debug_logger import debug_log
 
 # *My Modules*
 from .auto_dynasty_main import _clear_alarm, _add_alarm, _reset_alarm
-from .auto_dynasty_menus import push_sa, show_main_settings_picker, show_dynasty_settings_picker, show_noble_settings_picker, show_enable_disable_setting_picker, show_number_setting_picker, show_item_setting_picker, show_dynastychild_settings_picker, show_dynastymarriage_settings_picker, show_dynastyheir_settings_picker, show_dynastyblacksheep_settings_picker, show_dynastyrelations_settings_picker, show_dynastyrelations_alliances_picker, show_dynastyrelations_rivalries_picker, show_earepair_settings_picker, show_dailyupdate_settings_picker, SELECTED_ICON, UNSELECTED_ICON, GO_BACK_ICON
+from .auto_dynasty_menus import push_sa, show_main_settings_picker, show_dynasty_settings_picker, show_noble_settings_picker, show_enable_disable_setting_picker, show_number_setting_picker, show_item_setting_picker, show_dynastychild_settings_picker, show_dynastymarriage_settings_picker, show_dynastyheir_settings_picker, show_dynastyblacksheep_settings_picker, show_dynastyrelations_settings_picker, show_dynastyrelations_alliances_picker, show_dynastyrelations_rivalries_picker, show_earepair_settings_picker, show_dailyupdate_settings_picker, show_nobleinheritance_courtesy_settings_picker, SELECTED_ICON, UNSELECTED_ICON, GO_BACK_ICON
 from .auto_dynasty_settings import SETTINGS
 from .auto_dynasty_tuning import MOD_SA_IDS
 
@@ -67,6 +67,8 @@ def dynasty_open_item_picker_menu(menu_name: str = "", opt_sim: OptionalSimInfoP
             show_earepair_settings_picker(sim_info)
         elif menu_name == "dailyupdates":
             show_dailyupdate_settings_picker(sim_info)
+        elif menu_name == "courtesytitles":
+            show_nobleinheritance_courtesy_settings_picker(sim_info)
     except:
         debug_log("EXCEPTION in uwaepo.dynastymod_open_menu command:\n" + traceback.format_exc())
 
@@ -958,3 +960,90 @@ def dynasty_open_settings_weekday_picker(setting_name: str = "", sa_key: str = "
             show_item_setting_picker(sim_info,rows,on_setting_change,title_key,text_key)
     except:
         debug_log("EXCEPTION in uwaepo.dynastymod_open_weekday_picker command:\n" + traceback.format_exc())
+
+
+@sims4.commands.Command(
+    'uwaepo.dynastymod_open_played_unplayed_picker',
+    command_type=sims4.commands.CommandType.Live
+)
+def dynasty_open_settings_played_unplayed_picker(setting_name: str = "", sa_key: str = "", parent_sa_key: str = "", title_key: str = "", text_key: str = "", opt_sim: OptionalSimInfoParam = None, _connection=None):
+    debug_log("COMMMAND: uwaepo.dynasty_open_settings_familyrelation_picker fired")
+    try:
+        sa_id = MOD_SA_IDS.get(sa_key)
+        parent_sa_id = MOD_SA_IDS.get(parent_sa_key)
+
+        try:
+            title_key = int(title_key,0)
+            text_key = int(text_key,0)
+        except ValueError:
+            return
+
+        sim_info = get_optional_target(opt_sim, target_type=OptionalSimInfoParam, _connection=_connection)
+        if sim_info is None:
+            debug_log("[AutoDynastyMod] No SimInfo found.", _connection)
+            return False
+
+        sim = sim_info.get_sim_instance()
+    
+        if not sim:
+            return
+
+        if (sa_id is not None and parent_sa_id is not None):
+
+            def on_setting_change(dialog_instance):
+                if not dialog_instance.accepted:
+                    push_sa(sim,parent_sa_id)
+                    return
+
+                result_tag = dialog_instance.get_single_result_tag()
+
+                if result_tag == "goback":
+                    push_sa(sim,parent_sa_id)
+                    return
+                
+                debug_log(f"PICKER RESULT: {result_tag}")
+
+                new_setting = getattr(SETTINGS,setting_name,[])
+                
+                debug_log(f"BEFORE: {new_setting}")
+                
+                tag = result_tag
+
+                if tag in new_setting:
+                    new_setting.remove(tag)
+                else:
+                    new_setting.append(tag)
+
+                debug_log(f"AFTER: {new_setting}")
+
+                if new_setting is not None:
+                    debug_log(f"CHANGING SETTING")
+                    setattr(SETTINGS,setting_name,new_setting)
+                    SETTINGS.save()
+                
+                push_sa(sim,sa_id)
+
+            rows=[
+                {
+                    "name_key": 0x79A5EBFA,
+                    "tag": "played",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if "played" in getattr(SETTINGS,setting_name,None) else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0x6074CAEE,
+                    "tag": "unplayed",
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if "unplayed" in getattr(SETTINGS,setting_name,None) else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0xDDC3EC7E, # Go back
+                    "tag": "goback",
+                    "is_enable": True,
+                    "icon": GO_BACK_ICON
+                }
+            ]
+
+            show_item_setting_picker(sim_info,rows,on_setting_change,title_key,text_key)
+    except:
+        debug_log("EXCEPTION in uwaepo.dynasty_open_settings_familyrelation_picker command:\n" + traceback.format_exc())

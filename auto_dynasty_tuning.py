@@ -27,6 +27,10 @@ MOD_SA_IDS = {
     "openNobleInheritanceMinimumAgePicker_SA": 5111921182813158876,
     "openNobleInheritanceCareerReqsPicker_SA": 16571879572354402061,
 
+    "openCourtesySettings_SA": 7022819326938905676,
+    "openGlobalCourtesyTitleEnabler_SA": 5611392990528484270,
+    "openCourtesyTitlePlayedUnplayed_SA": 5449774718344541727,
+
     "openEnforceDynastyName_SA": 5021125578673096937,
 
     "openDynastyChildrenSub_SA": 5268191022460015977,
