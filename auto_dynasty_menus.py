@@ -980,7 +980,7 @@ def show_noble_settings_picker(sim_info):
             {
                 "name_key": 0xCBB44E66, # Courtesy Titles Settings
                 "row_description_key": 0xBDEF843A, # Settings related to retaining children courtesy titles such as Lord, Lady, Prince and Princess.
-                "tag": "noblecareerreqs",
+                "tag": "courtesytitles",
                 "is_enable": True,
                 "icon": sims4.resources.get_resource_key(
                     0x52B9A5EAFDD7EC29,
@@ -1300,7 +1300,7 @@ def show_nobleinheritance_courtesy_settings_picker(sim_info):
 
         debug_log(f"PICKER RESULT: {result_tag}")
         if result_tag == "mastercourtesysetting":
-            push_sa(sim,MOD_SA_IDS[""])
+            push_sa(sim,MOD_SA_IDS["openGlobalCourtesyTitleEnabler_SA"])
         elif result_tag == "playedunplayedcourtesy":
             push_sa(sim,MOD_SA_IDS["openCourtesyTitlePlayedUnplayed_SA"])
         elif result_tag == "goback":

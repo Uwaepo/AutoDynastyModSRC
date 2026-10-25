@@ -323,9 +323,10 @@ def _add_noble_career(sim_info: SimInfo) -> bool:
     if not sim_info:
         return False
 
-    (sim_data, _, _, _) = kingdom_service.get_common_data(sim_info)
+    neighborhood_id = kingdom_service.get_sim_neighborhood_id(sim_info)
+    kingdom_data = kingdom_service.get_or_create_neighborhood_data(neighborhood_id)
 
-    if not sim_data:
+    if not kingdom_data:
         return False
 
     if kingdom_service.has_noble_career(sim_info):
@@ -1422,7 +1423,7 @@ def _hook_kingdomservice_set_sim_title(original, self, sim_info:'SimInfo', neigh
             highest_parent_persistent_level = None
             parents = family_tree_service.get_family_relation_sim_ids(sim_info.id,RelationshipType.PARENT)
             for parent_id in parents:
-                parent_sim_info = sim_info = services.sim_info_manager().get(parent_id)
+                parent_sim_info = services.sim_info_manager().get(parent_id)
                 if parent_sim_info is None or not parent_sim_info.is_dead:
                     continue
                 highest_parent_persistent_level = _get_persistent_noble_trait_level(parent_sim_info)
@@ -1468,7 +1469,7 @@ def _hook_kingdomservice_on_quit(original, self, sim_info:'SimInfo', career_leve
         if neighborhood_id is None:
             return
         (kingdom_sim, family, affected_sim_ids, neighborhood_data) = self.get_common_data(sim_info)
-
+        
         is_played = sim_info.household.is_player_household
         retain_titles = SETTINGS.global_noble_mod_enabler and SETTINGS.retain_courtesy_titles and ("played" in SETTINGS.retain_title_playedunplayed and is_played) or ("unplayed" in SETTINGS.retain_title_playedunplayed and not is_played)
         
@@ -1490,7 +1491,7 @@ def _hook_kingdomservice_on_quit(original, self, sim_info:'SimInfo', career_leve
             debug_log(f"{sim_info.first_name} had a persistent level of {persistent_noble_level}. Is currently dead: {sim_info.is_dead}.")
 
             if persistent_noble_level is not None:
-                for sim_data in family:
+                for sim_data in tuple(family):
                     child_id = sim_data["sim_id"]
                     child_info = services.sim_info_manager().get(sim_data["sim_id"])
 
@@ -1503,7 +1504,7 @@ def _hook_kingdomservice_on_quit(original, self, sim_info:'SimInfo', career_leve
                     if sim_info.id in parents and inheriting_sim_id != child_id and child_id in affected_sim_ids and sim_data in family:
                         affected_sim_ids.remove(child_id)
                         family.remove(sim_data)
-        
+
         (new_kingdoms, old_inheriting_sim_id) = _kingdom.sim_death_or_abdicate(family, affected_sim_ids, neighborhood_data, sim_info.id)
 
         if retain_titles:
@@ -1513,17 +1514,15 @@ def _hook_kingdomservice_on_quit(original, self, sim_info:'SimInfo', career_leve
                     parent_noble_level = _get_persistent_noble_trait_level(sim_info)
                     if _get_persistent_noble_trait_level(sim_info) is not None and new_kingdom is not None:
                         sims = new_kingdom.sims
-                        affected_children = False
                         children = family_tree_service.get_family_relation_sim_ids(sim_info.id,RelationshipType.DESCENDANT)
                         for child_sim_id in children:
                             child_sim_info = services.sim_info_manager().get(child_sim_id)
                             if child_sim_id == inheriting_sim_id:
                                 continue
                             child_neighborhood_id = self.get_sim_neighborhood_id(child_sim_info)
-                            if not child_sim_info.is_dead and not self.has_noble_career(child_sim_info) and not sims.get(child_sim_id) and child_neighborhood_id == neighborhood_id:
+                            if not child_sim_info.is_dead and not self.has_noble_career(child_sim_info) and child_sim_id not in new_kingdom.sims and child_neighborhood_id == neighborhood_id:
                                 child_kingdom_sim = _kingdom.KingdomSim(child_sim_id, parent_noble_level - 1, KingdomPriority.TERTIARY, 0)
                                 new_kingdom.sims[child_sim_id] = child_kingdom_sim
-                                affected_children = True
                 repaired_kingdoms.append(new_kingdom)
             new_kingdoms = repaired_kingdoms
 
@@ -1545,45 +1544,116 @@ def _hook_kingdomservice_on_quit(original, self, sim_info:'SimInfo', career_leve
             del self._sim_virtual_neighborhoods[sim_info.id]
         if sim_info.id in self._sim_career_levels:
             del self._sim_career_levels[sim_info.id]
+
         return None
     except:
         debug_log("EXCEPTION in KingdomService.on_quit hook:\n" + traceback.format_exc())
     return original(self, sim_info, career_level, *args, **kwargs)
 
+
 @inject_to(KingdomService, "update_sim_info_title")
-def _hook_kingdomservice_update_sim_info_title(original, self, sim_info:'SimInfo') -> 'None':
-    family_tree_service = services.family_tree_service()
+def _hook_kingdomservice_update_sim_info_title(
+    original, self, sim_info
+):
+    if sim_info is None:
+        return
+
     kingdom_data = self.get_sim_kingdom_neighborhood_data(sim_info)
-    if kingdom_data is None:
-        is_played = sim_info.household.is_player_household
-        retain_titles = SETTINGS.global_noble_mod_enabler and SETTINGS.retain_courtesy_titles and ("played" in SETTINGS.retain_title_playedunplayed and is_played) or ("unplayed" in SETTINGS.retain_title_playedunplayed and not is_played)
+
+    kingdom_sim = (
+        self.get_sim_data(kingdom_data, sim_info.id)
+        if kingdom_data is not None
+        else None
+    )
+
+    # Only attempt restoration when the Sim has no kingdom record.
+    if kingdom_sim is None:
+        is_played = (
+            sim_info.household is not None
+            and sim_info.household.is_player_household
+        )
+
+        retain_titles = (
+            SETTINGS.global_noble_mod_enabler
+            and SETTINGS.retain_courtesy_titles
+            and (
+                ("played" in SETTINGS.retain_title_playedunplayed and is_played)
+                or
+                ("unplayed" in SETTINGS.retain_title_playedunplayed and not is_played)
+            )
+        )
 
         if retain_titles:
-            highest_parent_persistent_level = None
-            parents = family_tree_service.get_family_relation_sim_ids(sim_info.id,RelationshipType.PARENT)
-            for parent_id in parents:
-                parent_sim_info = sim_info = services.sim_info_manager().get(parent_id)
-                if parent_sim_info is None or not parent_sim_info.is_dead:
-                    continue
-                highest_parent_persistent_level = _get_persistent_noble_trait_level(parent_sim_info)
+            family_tree_service = services.family_tree_service()
+            sim_info_manager = services.sim_info_manager()
 
-            if highest_parent_persistent_level:
-                neighborhood_id = self.get_sim_neighborhood_id(sim_info)
-                kingdom_data = self.get_or_create_neighborhood_data(neighborhood_id)
-                if kingdom_data:
-                    child_kingdom_sim = self.get_sim_data(kingdom_data, sim_info.id)
-                    if child_kingdom_sim is None:
-                        child_kingdom_sim = _kingdom.KingdomSim(sim_info.id, highest_parent_persistent_level - 1, KingdomPriority.TERTIARY, 0)
-                        kingdom_data.sims[sim_info.id] = child_kingdom_sim
-                    self.set_sim_title(sim_info, kingdom_data.neighborhood_id, child_kingdom_sim)
-                    return
-        if kingdom_data is None:
-            sim_info.set_name_prefix_key(0)
-            sim_info.set_name_prefix_string('')
-            return
-    kingdom_sim = self.get_sim_data(kingdom_data, sim_info.id)
+            highest_parent_level = None
+
+            parents = family_tree_service.get_family_relation_sim_ids(
+                sim_info.id,
+                RelationshipType.PARENT
+            )
+
+            for parent_id in parents:
+                parent_info = sim_info_manager.get(parent_id)
+
+                if parent_info is None or not parent_info.is_dead:
+                    continue
+
+                parent_level = _get_persistent_noble_trait_level(
+                    parent_info
+                )
+
+                if parent_level is not None:
+                    highest_parent_level = max(
+                        highest_parent_level or 0,
+                        parent_level
+                    )
+
+            if highest_parent_level is not None:
+                neighborhood_id = self.get_sim_neighborhood_id(
+                    sim_info
+                )
+
+                if neighborhood_id is not None:
+                    if kingdom_data is None:
+                        kingdom_data = (
+                            self.get_or_create_neighborhood_data(
+                                neighborhood_id
+                            )
+                        )
+
+                    if kingdom_data is not None:
+                        kingdom_sim = _kingdom.KingdomSim(
+                            sim_info.id,
+                            highest_parent_level - 1,
+                            KingdomPriority.TERTIARY,
+                            0
+                        )
+
+                        kingdom_data.sims[sim_info.id] = kingdom_sim
+
+                        debug_log(
+                            f"RESTORED KINGDOM RECORD: "
+                            f"{sim_info.first_name} | "
+                            f"Level: {highest_parent_level}"
+                        )
+                        
+
     if kingdom_sim is None:
         sim_info.set_name_prefix_key(0)
         sim_info.set_name_prefix_string('')
         return
-    self.set_sim_title(sim_info, kingdom_data.neighborhood_id, kingdom_sim)
+
+    debug_log(
+        f"CLEARING TITLE: {sim_info.first_name} "
+        f"{sim_info.last_name} | "
+        f"Kingdom data exists: {kingdom_data is not None} | "
+        f"Kingdom Sim exists: {kingdom_sim is not None}"
+    )
+
+    self.set_sim_title(
+        sim_info,
+        kingdom_data.neighborhood_id,
+        kingdom_sim
+    )
