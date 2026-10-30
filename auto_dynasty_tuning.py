@@ -88,6 +88,15 @@ MOD_SA_IDS = {
     "openDailyUpdateTimePicker_SA": 9876246621668903607,
     "openDailyUpdateDayPicker_SA": 7102309261294649027,
     "openDailyUpdateEARepairEnabler_SA": 4959565179926849396,
+    
+    "openGenerationNameSub_SA": 17976074935413393759,
+    "openMarriageSyncSub_SA": 2992810451921525185,
+
+    "openGlobalGenerationNameEnabler_SA": 10725688430197576516,
+    "openGlobalMarriageSyncEnabler_SA": 5816593831415651078,
+    "openMarriageSyncGenderPriorityPicker_SA": 16120256486149639570,
+    "openMarriageSyncHeteroModePicker_SA": 12550080192695228765,
+    "openMarriageSyncSameSexModePicker_SA": 16968695366562270180
 }
 
 SA_IDS_TO_INJECT = (

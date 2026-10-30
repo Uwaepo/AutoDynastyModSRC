@@ -4,7 +4,7 @@ import traceback
 # *Sims 4 Modules*
 import sims4.commands
 from server_commands.argument_helpers import OptionalSimInfoParam, get_optional_target
-from sims.sim_info_types import Age
+from sims.sim_info_types import Age, Gender
 
 from relationships.relationship_enums import RelationshipType
 
@@ -13,7 +13,7 @@ from .utils.debug_logger import debug_log
 
 # *My Modules*
 from .auto_dynasty_main import _clear_alarm, _add_alarm, _reset_alarm
-from .auto_dynasty_menus import push_sa, show_main_settings_picker, show_dynasty_settings_picker, show_noble_settings_picker, show_enable_disable_setting_picker, show_number_setting_picker, show_item_setting_picker, show_dynastychild_settings_picker, show_dynastymarriage_settings_picker, show_dynastyheir_settings_picker, show_dynastyblacksheep_settings_picker, show_dynastyrelations_settings_picker, show_dynastyrelations_alliances_picker, show_dynastyrelations_rivalries_picker, show_earepair_settings_picker, show_dailyupdate_settings_picker, show_nobleinheritance_courtesy_settings_picker, SELECTED_ICON, UNSELECTED_ICON, GO_BACK_ICON
+from .auto_dynasty_menus import push_sa, show_main_settings_picker, show_dynasty_settings_picker, show_noble_settings_picker, show_enable_disable_setting_picker, show_number_setting_picker, show_item_setting_picker, show_dynastychild_settings_picker, show_dynastymarriage_settings_picker, show_dynastyheir_settings_picker, show_dynastyblacksheep_settings_picker, show_dynastyrelations_settings_picker, show_dynastyrelations_alliances_picker, show_dynastyrelations_rivalries_picker, show_earepair_settings_picker, show_dailyupdate_settings_picker, show_nobleinheritance_courtesy_settings_picker, show_generationname_settings_picker, show_marriagesync_settings_picker, SELECTED_ICON, UNSELECTED_ICON, GO_BACK_ICON
 from .auto_dynasty_settings import SETTINGS
 from .auto_dynasty_tuning import MOD_SA_IDS
 
@@ -69,6 +69,10 @@ def dynasty_open_item_picker_menu(menu_name: str = "", opt_sim: OptionalSimInfoP
             show_dailyupdate_settings_picker(sim_info)
         elif menu_name == "courtesytitles":
             show_nobleinheritance_courtesy_settings_picker(sim_info)
+        elif menu_name == "generationnames":
+            show_generationname_settings_picker(sim_info)
+        elif menu_name == "marriagesync":
+            show_marriagesync_settings_picker(sim_info)
     except:
         debug_log("EXCEPTION in uwaepo.dynastymod_open_menu command:\n" + traceback.format_exc())
 
@@ -967,7 +971,7 @@ def dynasty_open_settings_weekday_picker(setting_name: str = "", sa_key: str = "
     command_type=sims4.commands.CommandType.Live
 )
 def dynasty_open_settings_played_unplayed_picker(setting_name: str = "", sa_key: str = "", parent_sa_key: str = "", title_key: str = "", text_key: str = "", opt_sim: OptionalSimInfoParam = None, _connection=None):
-    debug_log("COMMMAND: uwaepo.dynasty_open_settings_familyrelation_picker fired")
+    debug_log("COMMMAND: uwaepo.dynastymod_open_played_unplayed_picker fired")
     try:
         sa_id = MOD_SA_IDS.get(sa_key)
         parent_sa_id = MOD_SA_IDS.get(parent_sa_key)
@@ -1046,4 +1050,179 @@ def dynasty_open_settings_played_unplayed_picker(setting_name: str = "", sa_key:
 
             show_item_setting_picker(sim_info,rows,on_setting_change,title_key,text_key)
     except:
-        debug_log("EXCEPTION in uwaepo.dynasty_open_settings_familyrelation_picker command:\n" + traceback.format_exc())
+        debug_log("EXCEPTION in uwaepo.dynastymod_open_played_unplayed_picker command:\n" + traceback.format_exc())
+
+
+@sims4.commands.Command(
+    'uwaepo.dynastymod_open_marriage_mode_picker',
+    command_type=sims4.commands.CommandType.Live
+)
+def dynasty_open_marriage_mode_picker(setting_name: str = "", same_sex: str = "", sa_key: str = "", parent_sa_key: str = "", title_key: str = "", text_key: str = "", opt_sim: OptionalSimInfoParam = None, _connection=None):
+    debug_log("COMMMAND: uwaepo.dynastymod_open_marriage_mode_picker fired")
+    try:
+        sa_id = MOD_SA_IDS.get(sa_key)
+        parent_sa_id = MOD_SA_IDS.get(parent_sa_key)
+
+        try:
+            title_key = int(title_key,0)
+            text_key = int(text_key,0)
+            same_sex = bool(int(same_sex))
+        except ValueError:
+            return
+
+        sim_info = get_optional_target(opt_sim, target_type=OptionalSimInfoParam, _connection=_connection)
+        if sim_info is None:
+            debug_log("[AutoDynastyMod] No SimInfo found.", _connection)
+            return False
+
+        sim = sim_info.get_sim_instance()
+    
+        if not sim:
+            return
+
+        if (sa_id is not None and parent_sa_id is not None):
+
+            def on_setting_change(dialog_instance):
+                if not dialog_instance.accepted:
+                    push_sa(sim,parent_sa_id)
+                    return
+
+                result_tag = dialog_instance.get_single_result_tag()
+                debug_log(f"PICKER RESULT: {result_tag}")
+
+                new_setting = result_tag
+                        
+                if result_tag == "goback":
+                    push_sa(sim,parent_sa_id)
+                    return
+
+                if new_setting is not None:
+                    debug_log(f"CHANGING SETTING")
+                    setattr(SETTINGS,setting_name,new_setting)
+                    SETTINGS.save()
+                push_sa(sim,sa_id)
+
+            rows=[]
+
+            if same_sex != True:
+                rows.append(
+                    {
+                        "name_key": 0x3B1BDC9F,
+                        "tag": "genderpriority",
+                        "is_enable": True,
+                        "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "genderpriority" else UNSELECTED_ICON
+                    }
+                )
+
+            rows.extend(
+                [
+                    {
+                        "name_key": 0xCF9D46CE,
+                        "tag": "randomsurname",
+                        "is_enable": True,
+                        "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "randomsurname" else UNSELECTED_ICON
+                    },
+                    {
+                        "name_key": 0xC3246DD9,
+                        "tag": "compoundsurname",
+                        "is_enable": True,
+                        "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "compoundsurname" else UNSELECTED_ICON
+                    },
+                    {
+                        "name_key": 0xE240EA59,
+                        "tag": "randomselection",
+                        "is_enable": True,
+                        "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "randomselection" else UNSELECTED_ICON
+                    },
+                    {
+                        "name_key": 0x4FFC749F,
+                        "tag": "none",
+                        "is_enable": True,
+                        "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == "none" else UNSELECTED_ICON
+                    },
+                    {
+                        "name_key": 0xDDC3EC7E, # Go back
+                        "tag": "goback",
+                        "is_enable": True,
+                        "icon": GO_BACK_ICON
+                    }
+                ]
+            )
+
+            show_item_setting_picker(sim_info,rows,on_setting_change,title_key,text_key)
+    except:
+        debug_log("EXCEPTION in uwaepo.dynastymod_open_marriage_mode_picker command:\n" + traceback.format_exc())
+
+
+@sims4.commands.Command(
+    'uwaepo.dynastymod_open_settings_gender_picker',
+    command_type=sims4.commands.CommandType.Live
+)
+def dynasty_open_settings_gender_picker(setting_name: str = "", sa_key: str = "", parent_sa_key: str = "", title_key: str = "", text_key: str = "", opt_sim: OptionalSimInfoParam = None, _connection=None):
+    debug_log("COMMMAND: uwaepo.dynastymod_open_settings_gender_picker fired")
+    try:
+        sa_id = MOD_SA_IDS.get(sa_key)
+        parent_sa_id = MOD_SA_IDS.get(parent_sa_key)
+
+        try:
+            title_key = int(title_key,0)
+            text_key = int(text_key,0)
+        except ValueError:
+            return
+
+        sim_info = get_optional_target(opt_sim, target_type=OptionalSimInfoParam, _connection=_connection)
+        if sim_info is None:
+            debug_log("[AutoDynastyMod] No SimInfo found.", _connection)
+            return False
+
+        sim = sim_info.get_sim_instance()
+    
+        if not sim:
+            return
+
+        if (sa_id is not None and parent_sa_id is not None):
+
+            def on_setting_change(dialog_instance):
+                if not dialog_instance.accepted:
+                    push_sa(sim,parent_sa_id)
+                    return
+
+                result_tag = dialog_instance.get_single_result_tag()
+                debug_log(f"PICKER RESULT: {result_tag}")
+
+                new_setting = result_tag
+                        
+                if result_tag == "goback":
+                    push_sa(sim,parent_sa_id)
+                    return
+
+                if new_setting is not None:
+                    debug_log(f"CHANGING SETTING")
+                    setattr(SETTINGS,setting_name,new_setting)
+                    SETTINGS.save()
+                push_sa(sim,sa_id)
+
+            rows=[
+                {
+                    "name_key": 0xEE0C505F, # Male
+                    "tag": int(Gender.MALE),
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == int(Gender.MALE) else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0x15E5C270, # Female
+                    "tag": int(Gender.FEMALE),
+                    "is_enable": True,
+                    "icon": SELECTED_ICON if getattr(SETTINGS,setting_name,None) == int(Gender.FEMALE) else UNSELECTED_ICON
+                },
+                {
+                    "name_key": 0xDDC3EC7E, # Go back
+                    "tag": "goback",
+                    "is_enable": True,
+                    "icon": GO_BACK_ICON
+                }
+            ]
+            
+            show_item_setting_picker(sim_info,rows,on_setting_change,title_key,text_key)
+    except:
+        debug_log("EXCEPTION in uwaepo.dynastymod_open_settings_gender_picker command:\n" + traceback.format_exc())

@@ -1,5 +1,6 @@
 # *Python Modules*
 import traceback
+import random
 
 # *Sims 4 Modules*
 import services
@@ -12,42 +13,34 @@ import date_and_time
 from careers.career_enums import CareerCategory
 from careers.career_tracker import CareerTracker
 
-from protocolbuffers import GameplaySaveData_pb2, DistributorOps_pb2
-from distributor.rollback import ProtocolBufferRollback
-
-from dynasty.dynasty import Dynasty, DynastyMessageType
+from dynasty.dynasty import Dynasty, DynastyMessageType, DynastyMembershipProvenance
 from dynasty.dynasty_service import DynastyService
 from dynasty.dynasty_tunings import DynastyTunables
 
 from event_testing.test_events import TestEvent
 
-from relationships.global_relationship_tuning import RelationshipGlobalTuning
-from relationships.relationship_enums import RelationshipType
+from family_tree.family_tree_service import FamilyTreeService
 
 from interactions.utils.death import DeathTracker
 from interactions.utils.death_enums import DeathType
 
 from kingdom.kingdom import _kingdom
+from kingdom.kingdom_enums import KingdomPriority, KingdomPronounsGender, KingdomTitlePriority
 from kingdom.kingdom_service import KingdomService
 from kingdom.kingdom_tuning import KingdomTuning
-from kingdom.kingdom_enums import KingdomPriority, KingdomPronounsGender, KingdomTitlePriority
 
-from sims.genealogy_tracker import GenealogyTracker
-from sims.outfits.outfit_enums import BodyType, OutfitCategory
-from sims.sim_info import SimInfo
 from sims.sim_info_types import Age, Gender
 
+from relationships.relationship_enums import RelationshipType
 from relationships.relationship_tracker import RelationshipTracker
 
 # *My Modules*
 from .auto_dynasty_settings import SETTINGS
 from . import constants
 
+from .utils import converter
 from .utils.injection import inject_to
 from .utils.debug_logger import debug_log
-
-import sims4
-logger = sims4.log.Logger('Dynasty')
 
 # *Global Variables*
 
@@ -55,30 +48,11 @@ daily_check_alarm_handle = None
 
 # *Functions*
 
-import services
 
-def debug_kingdom_titles():
-    kingdom_service = services.kingdom_service()
-
-    for neighborhood_id, neighborhood in kingdom_service._kingdom_data.items():
-        for sim_id, kingdom_sim in neighborhood.sims.items():
-            sim_info = services.sim_info_manager().get(sim_id)
-
-            if sim_info is None:
-                continue
-
-            debug_log(
-                f"Sim: {sim_info.full_name} | "
-                f"Kingdom level: {kingdom_sim.level} | "
-                f"Priority: {kingdom_sim.priority} | "
-                f"Noble career level: {kingdom_service.get_noble_career_user_level(sim_id)} | "
-                f"Title key: {sim_info.get_name_prefix_key()} | "
-                f"Title string: {sim_info.get_name_prefix_string()}"
-            )
 
 # Function Name: _get_sim_dynasty()
 # Description: Takes a sim's SimInfo and checks if they're currently in a dynasty. The dynasty object is then returned if one is found, otherwise a None object is returned.
-def _get_sim_dynasty(sim_info: SimInfo) -> Dynasty:
+def _get_sim_dynasty(sim_info: 'SimInfo') -> Dynasty:
     try:
         sim_dynasty = services.dynasty_service().get_sim_dynasty(sim_info.id)
         return sim_dynasty
@@ -89,7 +63,7 @@ def _get_sim_dynasty(sim_info: SimInfo) -> Dynasty:
 
 # Function Name: _are_sims_related_or_married()
 # Description: Checks if sim B is related (by 2 layers) to sim A or married.
-def _are_sims_related_or_married(sim_info_a: SimInfo,sim_info_b: SimInfo) -> bool:
+def _are_sims_related_or_married(sim_info_a: 'SimInfo',sim_info_b: 'SimInfo') -> bool:
     if sim_info_a is None or sim_info_b is None:
         return False
     return services.family_tree_service().are_sims_related(sim_info_a.id, sim_info_b.id, max_search_depth=2) or sim_info_a.spouse_sim_id == sim_info_b.id
@@ -111,7 +85,7 @@ def _is_dynasty_played(dynasty: Dynasty) -> bool:
             if member_sim_info is None:
                 continue
 
-            if member_sim_info.household.is_player_household == True:
+            if member_sim_info.household.is_player_household:
                 return True
         
         return False
@@ -256,7 +230,7 @@ def _calculate_sim_for_dynasty(target_sim_info) -> Dynasty:
                         if int(RelationshipType.PARENTS_SIBLING) in SETTINGS.whitelist_member_relatives:
                             dynasty_viable = True
 
-        if dynasty_viable == True:
+        if dynasty_viable:
             viable_dynasties.append(dynasty)
 
     if len(viable_dynasties) == 0:
@@ -275,7 +249,7 @@ def _calculate_sim_for_dynasty(target_sim_info) -> Dynasty:
 
 # Function Name: _set_sim_as_noble_successor()
 # Description: Sets a sim as another sim's noble successor if the latter is in the noble career.
-def _set_sim_as_noble_successor(noble_sim_info: SimInfo,inheriting_sim_info: SimInfo) -> None:
+def _set_sim_as_noble_successor(noble_sim_info: 'SimInfo',inheriting_sim_info: 'SimInfo') -> None:
     kingdom_service = services.kingdom_service()
 
     if noble_sim_info is None or inheriting_sim_info is None:
@@ -297,7 +271,7 @@ def _set_sim_as_noble_successor(noble_sim_info: SimInfo,inheriting_sim_info: Sim
 
 # Function Name: _remove_fulltime_careers()
 # Description: Removes all full time careers from a sim, which would conflict with the Noble career.
-def _remove_fulltime_careers(sim_info: SimInfo) -> bool:
+def _remove_fulltime_careers(sim_info: 'SimInfo') -> bool:
     career_tracker = sim_info.career_tracker
 
     if career_tracker is None:
@@ -317,7 +291,7 @@ def _remove_fulltime_careers(sim_info: SimInfo) -> bool:
 
 # Function Name: _add_noble_career()
 # Description: Adds the noble career to a sim. For some reason, the in-built EA function does not work for this use-case.
-def _add_noble_career(sim_info: SimInfo) -> bool:
+def _add_noble_career(sim_info: 'SimInfo') -> bool:
     kingdom_service = services.kingdom_service()
 
     if not sim_info:
@@ -355,7 +329,7 @@ def _order_relative_list(relative_sim_ids) -> list:
         
         return ordered_sim_infos
 
-def should_be_black_sheep(target_sim_info: SimInfo) -> bool:
+def should_be_black_sheep(target_sim_info: 'SimInfo') -> bool:
     dynasty = _get_sim_dynasty(target_sim_info)
 
     if dynasty is None:
@@ -405,7 +379,7 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
     chosen_heir_sim_info = None
 
     # Checks if a sim qualifies to be heir by their SimInfo.
-    def _can_be_heir(target_sim_info: SimInfo) -> bool:
+    def _can_be_heir(target_sim_info: 'SimInfo') -> bool:
         if target_sim_info is None:
             return False
 
@@ -507,7 +481,7 @@ def _calculate_dynasty_heir(dynasty: Dynasty) -> None:
 # - Must not have a higher noble rank than the noble sim.
 
 # If there are no qualifying successor sims found, the noble rank will be lost unless manually reclaimed by the player.
-def _calculate_noble_successor(noble_sim_info: SimInfo, career_level) -> SimInfo:
+def _calculate_noble_successor(noble_sim_info: 'SimInfo', career_level) -> 'SimInfo':
     if SETTINGS.global_noble_mod_enabler is not True:
         return
 
@@ -531,7 +505,7 @@ def _calculate_noble_successor(noble_sim_info: SimInfo, career_level) -> SimInfo
     noble_successor_sim_info = None
     
     # Checks if a sim qualifies to be successor by their SimInfo.
-    def _can_be_successor(target_sim_info: SimInfo) -> bool:
+    def _can_be_successor(target_sim_info: 'SimInfo') -> bool:
         if target_sim_info is None:
             return False
 
@@ -560,7 +534,7 @@ def _calculate_noble_successor(noble_sim_info: SimInfo, career_level) -> SimInfo
 
         return not headchild_rel < SETTINGS.minimum_rel_nobleinherit_threshold and not target_sim_info.is_dead and kingdom_service.get_sim_neighborhood_id(noble_sim_info) == kingdom_service.get_sim_neighborhood_id(target_sim_info) and minimum_age.sequential_value <= target_sim_info.age.sequential_value and lower_noble_rank and not kingdom_service.is_inheriting_sim(target_sim_info)
 
-    def _meets_career_reqs(target_sim_info: SimInfo) -> bool:
+    def _meets_career_reqs(target_sim_info: 'SimInfo') -> bool:
         if target_sim_info is None:
             return False
 
@@ -774,7 +748,7 @@ def _check_child_for_dynasties(sim_info) -> None:
 
     if highest_dynasty is not None:
         debug_log(f"Adding {sim_info.first_name} {sim_info.last_name} to {highest_dynasty.name} Dynasty.")
-        highest_dynasty.add_member(sim_info,update_client=True)
+        highest_dynasty.add_member(sim_info,update_client=True,membership_provenance=DynastyMembershipProvenance.OFFSPRING_EVENT)
 
         if SETTINGS.enforce_dynasty_name is True and sim_info.is_child_or_younger:
             for parent_sim_id in parent_sim_ids:
@@ -843,10 +817,209 @@ def _on_sim_marriage(sim_info,spouse_sim_info):
         else:
             highest_dynasty.add_member(sim_info,update_client=True)
 
+    if sim_dynasty is not None or spouse_dynasty is not None:
         _sync_dynasty_names(sim_info,spouse_sim_info)
+    elif SETTINGS.mccc_replacement_marriage_sync:
+        _non_dynasty_marriage_name_sync(sim_info,spouse_sim_info)
 
 
-def _sync_dynasty_names(sim_info,spouse_sim_info,dynasty_save_data=None):
+def _get_stripped_last_name(sim_info):
+    if sim_info is None:
+        return None
+
+    def _check_chinese(s: str):
+        if s.endswith("世"):
+            number = converter.extract_chinese_number(s[:-1])
+            if number is None:
+                return s
+            return s[:-1][:-len(number)]
+        return s
+
+    def _check_japanese_roman(s: str):
+        if s.endswith("世"):
+            number = converter.extract_roman_number(s[:-1])
+            if number is None:
+                return s
+            return s[:-1][:-len(number)]
+        return s
+
+    def _check_korean(s: str):
+        if s.endswith("세"):
+            split_name = s[:-1].split()
+            if len(split_name) > 1 and split_name[-1].isdigit():
+                split_name.pop()
+                return " ".join(split_name)
+            return s
+        return s
+
+    def _check_danish(s: str):
+        split_name = s.split()
+        if len(split_name) > 1 and split_name[-1].isdigit():
+            split_name.pop()
+            return " ".join(split_name)
+        return s
+
+    def _check_roman(s: str):
+        split_name = s.split()
+        if len(split_name) > 1 and converter.is_valid_roman(split_name[-1]):
+            split_name.pop()
+            return " ".join(split_name)
+        return s
+
+    locale = services.get_locale()
+    
+    if locale in ("zh-cn","zh-tw"):
+        return _check_chinese(sim_info.last_name)
+    elif locale == "ja-jp":
+        result = _check_japanese_roman(sim_info.last_name)
+        return _check_chinese(result) if result == sim_info.last_name else result
+    elif locale == "ko-kr":
+        return _check_korean(sim_info.last_name)
+    elif locale == "da-dk":
+        return _check_danish(sim_info.last_name)
+    else:
+        return _check_roman(sim_info.last_name)
+
+def _break_compound_surname(surname,target_sim_info):
+    locale = services.get_locale()
+
+    trait_manager = services.get_instance_manager(sims4.resources.Types.TRAIT)
+    left_trait = trait_manager.get(constants.COMPOUND_MAIDEN_NAME_LEFT_TRAIT_ID)
+    right_trait = trait_manager.get(constants.COMPOUND_MAIDEN_NAME_RIGHT_TRAIT_ID)
+
+    char = "-"
+    if locale == "zh-tw":
+        char = "－"
+    elif locale == "ja-jp":
+        char = "＝"
+    split_surname = surname.split(char)
+
+    debug_log(f"SPLIT SURNAME: {split_surname}")
+    debug_log(f"AMOUNT OF SURNAMES: {len(split_surname)}")
+
+    if len(split_surname) > 1:
+        if len(split_surname) == 2:
+            if target_sim_info.has_trait(left_trait):
+                return split_surname[0]
+            if target_sim_info.has_trait(right_trait):
+                return split_surname[1]
+        return random.choice(split_surname)
+    return surname
+
+def _non_dynasty_marriage_name_sync(sim_info,spouse_sim_info):
+    if sim_info is None or spouse_sim_info is None:
+        return
+
+    stripped_sim_surname = _get_stripped_last_name(sim_info)
+    stripped_spouse_surname = _get_stripped_last_name(spouse_sim_info)
+
+    if stripped_sim_surname == stripped_spouse_surname:
+        return
+
+    chosen_surname = stripped_sim_surname
+
+    same_sex = sim_info.gender == spouse_sim_info.gender
+    marriage_mode = SETTINGS.samesex_marriage_mode if same_sex == True else SETTINGS.hetero_marriage_mode
+
+    trait_manager = services.get_instance_manager(sims4.resources.Types.TRAIT)
+    left_trait = trait_manager.get(constants.COMPOUND_MAIDEN_NAME_LEFT_TRAIT_ID)
+    right_trait = trait_manager.get(constants.COMPOUND_MAIDEN_NAME_RIGHT_TRAIT_ID)
+
+    if SETTINGS.enforce_generation_surnames and marriage_mode != "none":
+        sim_generation,_ = _check_if_sim_has_generation(sim_info)
+        spouse_generation,_ = _check_if_sim_has_generation(spouse_sim_info)
+        
+        if sim_generation is not None and spouse_generation is None:
+            spouse_sim_info.last_name = stripped_sim_surname
+            return
+        elif sim_generation is None and spouse_generation is not None:
+            sim_info.last_name = stripped_spouse_surname
+            return
+
+    locale = services.get_locale()
+
+    def _clear_maiden_compound_traits(target_sim_info):
+        if target_sim_info.has_trait(left_trait):
+            target_sim_info.remove_trait(left_trait)
+        if target_sim_info.has_trait(right_trait):
+            target_sim_info.remove_trait(right_trait)
+
+    def _form_compound_surname(surname1: str,surname2: str,sim_info1, sim_info2):
+        char = "-"
+        if locale == "zh-tw":
+            char = "－"
+        elif locale == "ja-jp":
+            char = "＝"
+        _clear_maiden_compound_traits(sim_info1)
+        _clear_maiden_compound_traits(sim_info2)
+        if surname1 < surname2:
+            sim_info1.add_trait(left_trait)
+            sim_info2.add_trait(right_trait)
+            return surname1 + char + surname2
+        sim_info1.add_trait(right_trait)
+        sim_info2.add_trait(left_trait)
+        return surname2 + char + surname1
+
+    if not same_sex:
+        if marriage_mode == "randomselection":
+            marriage_mode = random.choice(("genderpriority","randomsurname","compoundsurname"))
+        
+        if marriage_mode == "randomsurname":
+            chosen_surname = random.choice((stripped_sim_surname,stripped_spouse_surname))
+        elif marriage_mode == "genderpriority":
+            chosen_surname = stripped_sim_surname if sim_info.gender == Gender(SETTINGS.hetero_marriage_gender_priority) else stripped_spouse_surname
+        elif marriage_mode == "compoundsurname":
+            chosen_surname = _form_compound_surname(
+                _break_compound_surname(stripped_sim_surname,sim_info),
+                _break_compound_surname(stripped_spouse_surname,spouse_sim_info),
+                sim_info,
+                spouse_sim_info
+            )
+    else:
+        if marriage_mode == "randomselection":
+            marriage_mode = random.choice(("randomsurname","compoundsurname"))
+        
+        if marriage_mode == "randomsurname":
+            chosen_surname = random.choice((stripped_sim_surname,stripped_spouse_surname))
+        elif marriage_mode == "compoundsurname":
+            chosen_surname = _form_compound_surname(
+                _break_compound_surname(stripped_sim_surname,sim_info),
+                _break_compound_surname(stripped_spouse_surname,spouse_sim_info),
+                sim_info,
+                spouse_sim_info
+            )
+
+    if stripped_sim_surname != chosen_surname:
+        sim_info.last_name = chosen_surname
+        
+    if stripped_spouse_surname != chosen_surname:
+        spouse_sim_info.last_name = chosen_surname
+
+
+def _revert_compounded_name(sim_info):
+    if sim_info is None:
+        return
+
+    stripped_surname = _get_stripped_last_name(sim_info)
+    
+    trait_manager = services.get_instance_manager(sims4.resources.Types.TRAIT)
+    left_trait = trait_manager.get(constants.COMPOUND_MAIDEN_NAME_LEFT_TRAIT_ID)
+    right_trait = trait_manager.get(constants.COMPOUND_MAIDEN_NAME_RIGHT_TRAIT_ID)
+
+    has_left = sim_info.has_trait(left_trait)
+    has_right = sim_info.has_trait(right_trait)
+
+    debug_log(f"REVERTING SIM'S COMPOUND NAME: {sim_info.first_name} {sim_info.last_name}.")
+    debug_log(f"SIM HAS LEFT MAIDEN TRAIT: {has_left}.")
+    debug_log(f"SIM HAS RIGHT MAIDEN TRAIT: {has_right}.")
+
+    if has_left or has_right:
+        restored_maiden_name = _break_compound_surname(stripped_surname,sim_info)
+        debug_log(f"SELECTED MAIDEN NAME: {restored_maiden_name}.")
+        if restored_maiden_name is not None:
+            sim_info.last_name = restored_maiden_name
+
+def _sync_dynasty_names(sim_info,spouse_sim_info):
     if (SETTINGS.enforce_dynasty_name and SETTINGS.global_dynasty_mod_enabler) is not True:
         return
 
@@ -863,13 +1036,16 @@ def _sync_dynasty_names(sim_info,spouse_sim_info,dynasty_save_data=None):
     if not dynasty_name:
         return
 
+    stripped_sim_surname = _get_stripped_last_name(sim_info)
+    stripped_spouse_surname = _get_stripped_last_name(spouse_sim_info)
+
     debug_log(f"**DYNASTY MARRIAGE NAME CHECK**")
-    debug_log(f"Sim last name: {sim_info.last_name}")
-    debug_log(f"Spouse last name: {spouse_sim_info.last_name}")
+    debug_log(f"Sim last name: {stripped_sim_surname}")
+    debug_log(f"Spouse last name: {stripped_spouse_surname}")
     debug_log(f"Dynasty name: {dynasty_name}")
 
-    sim_has_dynasty_name = sim_info.last_name.split(' ')[0] == dynasty_name
-    spouse_has_dynasty_name = spouse_sim_info.last_name.split(' ')[0] == dynasty_name
+    sim_has_dynasty_name = stripped_sim_surname == dynasty_name
+    spouse_has_dynasty_name = stripped_spouse_surname == dynasty_name
 
     debug_log(f"Sim has dynasty name: {sim_has_dynasty_name}")
     debug_log(f"Spouse has dynasty name: {spouse_has_dynasty_name}")
@@ -1007,12 +1183,11 @@ def _offspring_repair_check(update_kingdom_titles=False):
     repaired = 0
     sim_info_manager = services.sim_info_manager()
     if sim_info_manager is None:
-        logger.error('DynastyService: sim_info_manager is None, skipping offspring repair.')
         return 0
     dynasty_service = services.dynasty_service()
     kingdom_service = services.kingdom_service()
     for child_sim_info in sim_info_manager.get_all():
-        if not child_sim_info is None:
+        if child_sim_info is not None:
             if not child_sim_info.is_pet:
                 if dynasty_service.get_sim_dynasty(child_sim_info.id) is None:
                     if (child_sim_info.household.is_player_household and SETTINGS.enable_repair_for_played) or (not child_sim_info.household.is_player_household and SETTINGS.enable_repair_for_unplayed):
@@ -1104,23 +1279,173 @@ def _get_persistent_noble_trait_level(sim_info):
         if persistent_noble_trait is not None and sim_info.has_trait(persistent_noble_trait):
             return level
 
+
+def _check_if_sim_has_generation(sim_info):
+    if sim_info is None:
+        return (None, False)
+
+    def _check_chinese():
+        if sim_info.last_name.endswith("世"):
+            string = converter.extract_chinese_number(sim_info.last_name[:-1])
+            return converter.chinese_to_int(string) if string is not None else None
+
+    def _check_japanese_roman():
+        if sim_info.last_name.endswith("世"):
+            string = converter.extract_roman_number(sim_info.last_name[:-1])
+            return converter.roman_to_int(string) if string is not None else None
+
+    def _check_korean():
+        if sim_info.last_name.endswith("세"):
+            string = sim_info.last_name.split()[-1][:-1]
+            return int(string) if string.isdigit() else None
+
+    def _check_danish():
+        string = sim_info.last_name.split()[-1]
+        return int(string) if string.isdigit() else None
+        
+    def _check_roman():
+        string = sim_info.last_name.split()[-1]
+        return converter.roman_to_int(string) if string is not None else None
+
+    locale = services.get_locale()
+
+    if locale in ("zh-cn","zh-tw"):
+        return (_check_chinese(), False)
+    elif locale == "ja-jp":
+        generation = _check_japanese_roman()
+        return (generation, True) if generation is not None else (_check_chinese(), False)
+    elif locale == "ko-kr":
+        return (_check_korean(), False)
+    elif locale == "da-dk":
+        return (_check_danish(), False)
+    else:
+        return (_check_roman(), False)
+
+
+def _create_generational_name(raw_last_name,generation,jp_roman=False):
+    if not 1 <= generation <= 100:
+        return raw_last_name
+
+    locale = services.get_locale()
+
+    if locale in ("zh-cn","zh-tw") or (locale == "ja-jp" and jp_roman != True):
+        cn_number = converter.int_to_chinese(generation)
+        if cn_number is not None:
+            return raw_last_name + cn_number + "世"
+    elif locale == "ja-jp":
+        ro_number = converter.int_to_roman(generation)
+        if ro_number is not None:
+            return raw_last_name + ro_number + "世"
+    elif locale == "ko-kr":
+        return raw_last_name + " " + str(generation) + "세"
+    elif locale == "da-dk":
+        return raw_last_name + " " + str(generation)
+    else:
+        ro_number = converter.int_to_roman(generation)
+        if ro_number is not None:
+            return raw_last_name + " " + ro_number
+    return raw_last_name
+
+
+def _parent_has_matching_child_name(parent_info):
+    if parent_info is None:
+        return
+    family_tree_service = services.family_tree_service()
+    children = family_tree_service.get_family_relation_sim_ids(parent_info.id,RelationshipType.DESCENDANT)
+    for child_id in children:
+        child_info = services.sim_info_manager().get(child_id)
+        if child_info is not None and child_info.first_name == parent_info.first_name:
+            return True
+    return False
+
+
 # *Hooks*
-
-@inject_to(DynastyService, "_repair_existing_children_for_dynasties")
-def _hook_dynastyservice_repair_existing_children_for_dynastiest(original, self, update_kingdom_titles, *args, **kwargs):
-    if not SETTINGS.global_automatic_repair:
-        return 0
-    repaired = _offspring_repair_check(update_kingdom_titles)
-    return repaired
-
 
 @inject_to(DynastyService, "handle_new_child_event")
 def _hook_dynastyservice_handle_new_child_event(original, self, parent_sim_info, offspring_sim_info, *args, **kwargs):
     try:
-        if offspring_sim_info is None or offspring_sim_info.is_pet or _get_sim_dynasty(offspring_sim_info) is not None:
+        if parent_sim_info is None or offspring_sim_info is None or offspring_sim_info.is_pet:
             return
-        if not offspring_sim_info.household.is_player_household or (SETTINGS.global_automatic_repair and SETTINGS.enable_repair_for_played):
-            _check_child_for_dynasties(offspring_sim_info)
+        family_tree_service = services.family_tree_service()
+
+        if SETTINGS.global_dynasty_mod_enabler:
+            if SETTINGS.automatic_children_join and not offspring_sim_info.household.is_player_household or (SETTINGS.global_automatic_repair and SETTINGS.enable_repair_for_played):
+                _check_child_for_dynasties(offspring_sim_info)
+
+            played_sims = offspring_sim_info.household.is_player_household or parent_sim_info.household.is_player_household
+            adopted_sim = family_tree_service.is_sim_adopted(offspring_sim_info.id)
+
+            if adopted_sim or played_sims:
+                return
+
+            if SETTINGS.enforce_generation_surnames:
+                debug_log("CHECKING NEW CHILD FOR GENERATION REQS:")
+                debug_log(f"PARENT NAME: {parent_sim_info.first_name} {parent_sim_info.last_name}")
+                debug_log(f"CHILD ORIGINAL NAME: {offspring_sim_info.first_name}")
+
+                already_has_matching_child = _parent_has_matching_child_name(parent_sim_info)
+
+                debug_log(f"PARENT ALREADY HAS MATCHING CHILD: {already_has_matching_child}")
+                debug_log(f"CHILD SHARES GENDER WITH PARENT: {offspring_sim_info.gender == parent_sim_info.gender}")
+
+                if already_has_matching_child == False and offspring_sim_info.gender == parent_sim_info.gender:
+                    existing_generation,_ = _check_if_sim_has_generation(offspring_sim_info)
+                    parent_generation,jp_roman = _check_if_sim_has_generation(parent_sim_info)
+
+                    debug_log(f"ALREADY HAS GENERATION: {existing_generation is not None}")
+                    debug_log(f"PARENT CURRENT GENERATION: {parent_generation}")
+
+                    if existing_generation is None and parent_generation is not None:
+                        stripped_last_name = _get_stripped_last_name(parent_sim_info)
+                        debug_log(F"STRIPPED SURNAME: {stripped_last_name}")
+                        next_gen_surname = _create_generational_name(stripped_last_name,parent_generation+1,jp_roman)
+                        debug_log(F"NEXT SURNAME: {next_gen_surname}")
+                        if next_gen_surname is not None:
+                            debug_log("SETTING CHILD'S NAME...")
+                            offspring_sim_info.first_name = parent_sim_info.first_name
+                            offspring_sim_info.last_name = next_gen_surname
+                            return
+            
+            if SETTINGS.mccc_replacement_marriage_sync:
+                trait_manager = services.get_instance_manager(sims4.resources.Types.TRAIT)
+
+                left_trait = trait_manager.get(constants.COMPOUND_MAIDEN_NAME_LEFT_TRAIT_ID)
+                right_trait = trait_manager.get(constants.COMPOUND_MAIDEN_NAME_RIGHT_TRAIT_ID)
+
+                if offspring_sim_info.has_trait(left_trait) or offspring_sim_info.has_trait(right_trait):
+                    return
+                
+                selected_parent_info = None
+
+                parents = family_tree_service.get_family_relation_sim_ids(offspring_sim_info.id,RelationshipType.PARENT)
+                for parent_id in parents:
+                    target_parent_sim_info = services.sim_info_manager().get(parent_id)
+                    if target_parent_sim_info is None:
+                        continue
+                    if (target_parent_sim_info.has_trait(left_trait) or target_parent_sim_info.has_trait(right_trait)) and target_parent_sim_info.gender == offspring_sim_info.gender:
+                        selected_parent_info = target_parent_sim_info
+                        break
+
+                if selected_parent_info is None:
+                    return
+
+                debug_log(f"PARENT SELECTED FOR MAIDEN NAME INHERITANCE: {selected_parent_info.first_name} {selected_parent_info.last_name}.")
+                
+                locale = services.get_locale()
+
+                char = "-"
+                if locale == "zh-tw":
+                    char = "－"
+                elif locale == "ja-jp":
+                    char = "＝"
+                        
+                if len(offspring_sim_info.last_name.split(char)) == 2:
+                    if selected_parent_info.has_trait(left_trait):
+                        offspring_sim_info.add_trait(left_trait)
+                        debug_log(f"GAVE CHILD {offspring_sim_info.first_name} {offspring_sim_info.last_name} THE LEFT MAIDEN NAME TRAIT.")
+                    elif selected_parent_info.has_trait(right_trait):
+                        offspring_sim_info.add_trait(right_trait)
+                        debug_log(f"GAVE CHILD {offspring_sim_info.first_name} {offspring_sim_info.last_name} THE RIGHT MAIDEN NAME TRAIT.")
     except:
         return original(self, parent_sim_info, offspring_sim_info, *args, **kwargs)
 
@@ -1139,7 +1464,7 @@ def _hook_dynasty_service_on_sim_spawned(original, self, *args, **kwargs):
                         spouse_sim_info = services.sim_info_manager().get(member_sim_info.spouse_sim_id)
                         if spouse_sim_info is not None:
                             if dynasty is _get_sim_dynasty(spouse_sim_info):
-                                if member_sim_info.last_name != spouse_sim_info.last_name:
+                                if _get_stripped_last_name(member_sim_info) != _get_stripped_last_name(spouse_sim_info):
                                     _sync_dynasty_names(member_sim_info,spouse_sim_info)
     except:
         debug_log("EXCEPTION in DynastyService._on_sim_spawned hook:\n" + traceback.format_exc())
@@ -1154,8 +1479,6 @@ def _hook_dynasty_service_on_sim_spawned(original, self, *args, **kwargs):
 def _hook_relationship_tracker_add_relationship_bit(original, self, target_sim_id, bit, *args, **kwargs):
     result = original(self, target_sim_id, bit, *args, **kwargs)
     try:
-        kingdom_service = services.kingdom_service()
-
         sim_info = self._sim_info
         target_sim_info = services.sim_info_manager().get(target_sim_id)
 
@@ -1185,7 +1508,6 @@ def _hook_dynasty_add_member(original, self, sim_info, *args, **kwargs):
     except:
         debug_log("EXCEPTION in Dynasty.add_member hook:\n" + traceback.format_exc())
     return result
-
 
 # Runs when a dynasty member is removed from the dynasty.
 # This allows for dynasty hierarchies to change when new members are removed through birth, adoption or marriages. (such as heirs changing or members being outcasted)
@@ -1226,7 +1548,7 @@ def _hook_dynasty_set_head(original, self, *args, **kwargs):
 
         if SETTINGS.automatic_children_join:
             for child_sim_info in head_children_sim_infos:
-                if _get_sim_dynasty(child_sim_info) is None and child_sim_info is not None and _get_sim_dynasty(child_sim_info) == None:
+                if child_sim_info is not None and _get_sim_dynasty(child_sim_info) is None:
                     self.add_member(child_sim_info,update_client=True)
 
         _calculate_dynasty_heir(self)
@@ -1312,14 +1634,23 @@ def _hook_kingdom_service_handle_spouse_eventr(original, self, sim_info, resolve
     debug_log("HOOK: KingdomService.handle_spouse_event fired")
     result = original(self, sim_info, resolver, *args, **kwargs)
     try:
-        kingdom_service = services.kingdom_service()
-
         debug_log("KINGDOM SERVICE SPOUSE EVENT")
         debug_log(f"Sim: {sim_info.first_name} {sim_info.last_name}")
+
         spouse_sim_id = resolver.event_kwargs['spouse_sim_id']
-        ex_spouse_sim_id = resolver.event_kwargs['ex_spouse_sim_id']
-        spouse_sim_info = services.sim_info_manager().get(spouse_sim_id) if spouse_sim_id else services.sim_info_manager().get(ex_spouse_sim_id)
+        spouse_sim_info = services.sim_info_manager().get(spouse_sim_id) if spouse_sim_id is not None else None
+
+        if spouse_sim_info is None:
+            return
+        
         debug_log(f"Spouse Sim: {spouse_sim_info.first_name} {spouse_sim_info.last_name}")
+
+        ex_spouse_sim_id = resolver.event_kwargs['ex_spouse_sim_id']
+        ex_spouse_sim_info = services.sim_info_manager().get(ex_spouse_sim_id) if ex_spouse_sim_id is not None else None
+
+        if ex_spouse_sim_info is not None and ex_spouse_sim_id != spouse_sim_id:
+            if SETTINGS.mccc_replacement_marriage_sync and SETTINGS.restore_divorced_maiden_name:
+                _revert_compounded_name(ex_spouse_sim_info)
         _on_sim_marriage(sim_info,spouse_sim_info)
     except:
         debug_log("EXCEPTION in KingdomService.handle_spouse_event hook:\n" + traceback.format_exc())
@@ -1327,42 +1658,21 @@ def _hook_kingdom_service_handle_spouse_eventr(original, self, sim_info, resolve
     return result
 
 
-@inject_to(DynastyService, "on_all_households_and_sim_infos_loaded")
-def _hook_dynastyservice_on_all_households_and_sim_infos_loaded(original, self, client, *args, **kwargs):
+@inject_to(FamilyTreeService, "set_marriage")
+def _hook_familytreeservice_set_marriage(original, self, source_sim_id, target_sim_id, married_status, *args, **kwargs):
+    debug_log("HOOK: FamilyTreeService.set_marriage fired")
+    result = original(self, source_sim_id, target_sim_id, married_status, *args, **kwargs)
     try:
-        distributor_op = DistributorOps_pb2.DynastyInfo()
-        distributor_op.message_type = DynastyMessageType.ADD
-        active_household = services.active_household()
-        dynasties_to_remove = []
-        for (dynasty_id, dynasty) in self._dynasties.items():
-            try:
-                dynasty.on_all_households_and_sim_infos_loaded(active_household)
-                if len(dynasty.get_members()) == 0:
-                    dynasties_to_remove.append(dynasty)
-                else:
-                    sim_info_manager = services.sim_info_manager()
-                    with ProtocolBufferRollback(distributor_op.dynasties) as dynasty_data_msg:
-                        dynasty.add_dynasty_members(dynasty_data_msg, sim_info_manager)
-                        dynasty.add_detailed_dynasty_data(dynasty_data_msg, sim_info_manager)
-            except:
-                logger.exception('Unhandled error in on_all_households_and_sim_infos_loaded of dynasty: {}', dynasty_id)
-        for dynasty in dynasties_to_remove:
-            self.remove_dynasty(dynasty)
-        if not self._offspring_repair_done:
-            repaired = self._repair_existing_children_for_dynasties(update_kingdom_titles=True)
-            logger.info('DynastyService: offspring repair added %s sims', repaired)
-            self._offspring_repair_done = True
-        for (dynasty_id, dynasty) in list(self._dynasties.items()):
-            member_sim_ids = list(dynasty.get_members())
-            for member_sim_id in member_sim_ids:
-                if self.get_sim_dynasty(member_sim_id) is not dynasty:
-                    _clean_multi_dynasty_sim(member_sim_id)
-            dynasty.distribute_dynasty_msg(DynastyMessageType.UPDATE)
-        self.send_dynasties_to_client(distributor_op)
+        if married_status == False and SETTINGS.mccc_replacement_marriage_sync and SETTINGS.restore_divorced_maiden_name:
+            sim_info = services.sim_info_manager().get(source_sim_id) if source_sim_id is not None else None
+            ex_spouse_info = services.sim_info_manager().get(target_sim_id) if target_sim_id is not None else None
+            if ex_spouse_info is not None:
+                _revert_compounded_name(ex_spouse_info)
+            if sim_info is not None:
+                _revert_compounded_name(sim_info)
     except:
-        debug_log("EXCEPTION in DynastyService.on_all_households_and_sim_infos_loaded hook:\n" + traceback.format_exc())
-        return original(self, client, *args, **kwargs)
-    return
+        debug_log("EXCEPTION in FamilyTreeService.set_marriage hook:\n" + traceback.format_exc())
+    return result
 
 
 @inject_to(DynastyService, "on_zone_load")
@@ -1373,7 +1683,6 @@ def _hook_dynastyservice_on_zone_load(original, self, *args, **kwargs):
         global daily_check_alarm_handle 
         _clear_alarm()
         daily_check_alarm_handle = _add_alarm(self)
-        debug_kingdom_titles()
     except:
         debug_log("EXCEPTION in DynastyService.on_zone_load hook:\n" + traceback.format_exc())
     return result
@@ -1485,6 +1794,8 @@ def _hook_kingdomservice_on_quit(original, self, sim_info:'SimInfo', career_leve
 
         debug_log(f"Chosen inheritor: {inheriting_sim_info.first_name}.")
 
+        children = family_tree_service.get_family_relation_sim_ids(sim_info.id,RelationshipType.DESCENDANT)
+
         if retain_titles:
             persistent_noble_level = _get_persistent_noble_trait_level(sim_info)
 
@@ -1493,15 +1804,14 @@ def _hook_kingdomservice_on_quit(original, self, sim_info:'SimInfo', career_leve
             if persistent_noble_level is not None:
                 for sim_data in tuple(family):
                     child_id = sim_data["sim_id"]
-                    child_info = services.sim_info_manager().get(sim_data["sim_id"])
+                    child_info = services.sim_info_manager().get(child_id)
 
-                    parents = family_tree_service.get_family_relation_sim_ids(child_id,RelationshipType.PARENT)
                     debug_log(f"Checking Child {child_info.first_name}")
-                    debug_log(f"Has noble as parent: {sim_info.id in parents}")
+                    debug_log(f"Has noble as parent: {child_id in children}")
                     debug_log(f"Is not inheritor: {inheriting_sim_id != child_id}")
                     debug_log(f"Affected sim: {child_id in affected_sim_ids}")
                     debug_log(f"Is in family list: {sim_data in family}")
-                    if sim_info.id in parents and inheriting_sim_id != child_id and child_id in affected_sim_ids and sim_data in family:
+                    if child_id in children and inheriting_sim_id != child_id and child_id in affected_sim_ids:
                         affected_sim_ids.remove(child_id)
                         family.remove(sim_data)
 
@@ -1512,9 +1822,7 @@ def _hook_kingdomservice_on_quit(original, self, sim_info:'SimInfo', career_leve
             for new_kingdom in new_kingdoms:
                 if new_kingdom.neighborhood_id == neighborhood_id:
                     parent_noble_level = _get_persistent_noble_trait_level(sim_info)
-                    if _get_persistent_noble_trait_level(sim_info) is not None and new_kingdom is not None:
-                        sims = new_kingdom.sims
-                        children = family_tree_service.get_family_relation_sim_ids(sim_info.id,RelationshipType.DESCENDANT)
+                    if parent_noble_level is not None and new_kingdom is not None:
                         for child_sim_id in children:
                             child_sim_info = services.sim_info_manager().get(child_sim_id)
                             if child_sim_id == inheriting_sim_id:
@@ -1566,7 +1874,6 @@ def _hook_kingdomservice_update_sim_info_title(
         else None
     )
 
-    # Only attempt restoration when the Sim has no kingdom record.
     if kingdom_sim is None:
         is_played = (
             sim_info.household is not None

@@ -289,6 +289,8 @@ def show_dynasty_settings_picker(sim_info):
             push_sa(sim,MOD_SA_IDS["openDynastyMarriageSub_SA"])
         elif result_tag == "enforcedynastynamesetting":
             push_sa(sim,MOD_SA_IDS["openEnforceDynastyName_SA"])
+        elif result_tag == "generationnamesetting":
+            push_sa(sim,MOD_SA_IDS["openGenerationNameSub_SA"])
         elif result_tag == "heirsettings":
             push_sa(sim,MOD_SA_IDS["openDynastyHeirSub_SA"])
         elif result_tag == "outcastsettings":
@@ -342,6 +344,16 @@ def show_dynasty_settings_picker(sim_info):
                 "is_enable": True,
                 "icon": sims4.resources.get_resource_key(
                     0x28D407A41C85DCA8,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x5FAAD7FA, # Generational Name Settings
+                "row_description_key": 0xAA6869C9, # Settings related to continuing generational names such as Cordelia Thebe V -> Cordelia Thebe VI.
+                "tag": "generationnamesetting",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0xD350B90F27E4F5F5,
                     0x2F7D0004
                 )
             },
@@ -1337,6 +1349,268 @@ def show_nobleinheritance_courtesy_settings_picker(sim_info):
                 "is_enable": True,
                 "icon": GO_BACK_ICON
             },
+        ],
+        on_submit=on_submit
+    )
+
+
+def show_earepair_settings_picker(sim_info):
+
+    sim = sim_info.get_sim_instance()
+    
+    if not sim:
+        return
+
+    def on_submit(dialog_instance):
+
+        if not dialog_instance.accepted:
+            push_sa(sim,MOD_SA_IDS["openGlobalSettings_SA"])
+            return
+
+        result_tag = dialog_instance.get_single_result_tag()
+        services.ui_dialog_service().dialog_cancel(dialog_instance.dialog_id)
+        debug_log(f"PICKER RESULT: {result_tag}")
+
+        if result_tag == "masterearepairsetting":
+            push_sa(sim,MOD_SA_IDS["openGlobalEARepairEnabler_SA"])
+        elif result_tag == "masterplayedsetting":
+            push_sa(sim,MOD_SA_IDS["openPlayedEARepairEnabler_SA"])
+        elif result_tag == "masterunplayedsetting":
+            push_sa(sim,MOD_SA_IDS["openUnplayedEARepairEnabler_SA"])
+        elif result_tag == "whichmemberrelatives":
+            push_sa(sim,MOD_SA_IDS["openEARepairWhichRoles_SA"])
+        elif result_tag == "headrepairsettings":
+            push_sa(sim,MOD_SA_IDS["openEARepairHeadWhitelist_SA"])
+        elif result_tag == "heirrepairsettings":
+            push_sa(sim,MOD_SA_IDS["openEARepairHeirWhitelist_SA"])
+        elif result_tag == "memberrepairsettings":
+            push_sa(sim,MOD_SA_IDS["openEARepairMemberWhitelist_SA"])
+        elif result_tag == "goback":
+            push_sa(sim,MOD_SA_IDS["openGlobalSettings_SA"])
+
+    show_item_picker_dialog(
+        sim_info=sim_info,
+        title_key=0xD976BDDF, # EA Dynasty Repair Settings
+        text_key=0x8BD94135, # Settings to disable/alter EA's automatic dynasty repair on game load.
+        rows=[
+            {
+                "name_key": 0xF0E4E429, # [MASTER] Enable/Disable EA Dynasty Repairs
+                "row_description_key": 0xC637BCD3, # Setting to enable/disable the automatic EA repairs that happens on game load.
+                "tag": "masterearepairsetting",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x0603A67EE530554D,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x868135E3, # [MASTER] Enable/Disable Repairs for Played Dynasties
+                "row_description_key": 0xF7E10FF0, # Setting to enable/disable the automatic EA repairs for played dynasties.
+                "tag": "masterplayedsetting",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x1F4672FD624A24C4,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x3C6B74E6, # [MASTER] Enable/Disable Repairs for Unplayed Dynasties
+                "row_description_key": 0x608F2EA6, # Setting to enable/disable the automatic EA repairs for unplayed dynasties.
+                "tag": "masterunplayedsetting",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x73A4730B044D78B9,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0xAAC3B83A, # Dynasty Roles for Repair
+                "row_description_key": 0xD6391B9E, # Which dynasty roles should be checked for relatives to add to the dynasty.
+                "tag": "whichmemberrelatives",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0xA8AE08E5B77C91CA,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x0F3C1151, # Head Sim Relative Whitelist
+                "row_description_key": 0x53E04AB7, # Which types of head sim relatives will be added during repair.
+                "tag": "headrepairsettings",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x7C04FD8E1385541F,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x6183F531, # Heir Sim Relative Whitelist
+                "row_description_key": 0x7010CEDF, # Which types of heir sim relatives will be added during repair.
+                "tag": "heirrepairsettings",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x7C04FD8E1385541F,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x8D4843EA, # Member Sim Relative Whitelist
+                "row_description_key": 0xFF075923, # Which types of member sim relatives will be added during repair.
+                "tag": "memberrepairsettings",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x7C04FD8E1385541F,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0xDDC3EC7E, # Go back
+                "tag": "goback",
+                "is_enable": True,
+                "icon": GO_BACK_ICON
+            }
+        ],
+        on_submit=on_submit
+    )
+
+def show_generationname_settings_picker(sim_info):
+
+    sim = sim_info.get_sim_instance()
+    
+    if not sim:
+        return
+
+    def on_submit(dialog_instance):
+
+        if not dialog_instance.accepted:
+            push_sa(sim,MOD_SA_IDS["openDynastySettings_SA"])
+            return
+
+        result_tag = dialog_instance.get_single_result_tag()
+        services.ui_dialog_service().dialog_cancel(dialog_instance.dialog_id)
+        debug_log(f"PICKER RESULT: {result_tag}")
+
+        if result_tag == "mastergenerationsetting":
+            push_sa(sim,MOD_SA_IDS["openGlobalGenerationNameEnabler_SA"])
+        elif result_tag == "marriagesync":
+            push_sa(sim,MOD_SA_IDS["openMarriageSyncSub_SA"])
+        elif result_tag == "goback":
+            push_sa(sim,MOD_SA_IDS["openDynastySettings_SA"])
+
+    show_item_picker_dialog(
+        sim_info=sim_info,
+        title_key=0x5FAAD7FA, # Generational Name Settings
+        text_key=0xAA6869C9, # Settings related to continuing generational names such as Cordelia Thebe V -> Cordelia Thebe VI.
+        rows=[
+            {
+                "name_key": 0x4299175B, # [MASTER] Enable/Disable Generational Name Retention
+                "row_description_key": 0x0BC9838A, # Enabling this setting will allow the mod to enforce generational names by renaming children of the same sex. E.g. Cordelia Thebe V will give birth to Cordelia Thebe VI. Does not require a dynasty/noble rank. (DISABLED BY DEFAULT)
+                "tag": "mastergenerationsetting",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0xD350B90F27E4F5F5,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x6F4AB9AE, # MCCC Sync Married Names Replacement
+                "row_description_key": 0x723AE008, # A replacement for MCCC's 'Sync Married Names' setting under MC Cleaner which will not impact name changes made by this mod.
+                "tag": "marriagesync",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x13fab148329e8988,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0xDDC3EC7E, # Go back
+                "tag": "goback",
+                "is_enable": True,
+                "icon": GO_BACK_ICON
+            }
+        ],
+        on_submit=on_submit
+    )
+
+def show_marriagesync_settings_picker(sim_info):
+
+    sim = sim_info.get_sim_instance()
+    
+    if not sim:
+        return
+
+    def on_submit(dialog_instance):
+
+        if not dialog_instance.accepted:
+            push_sa(sim,MOD_SA_IDS["openGenerationNameSub_SA"])
+            return
+
+        result_tag = dialog_instance.get_single_result_tag()
+        services.ui_dialog_service().dialog_cancel(dialog_instance.dialog_id)
+        debug_log(f"PICKER RESULT: {result_tag}")
+
+        if result_tag == "mastermarriagesyncsetting":
+            push_sa(sim,MOD_SA_IDS["openGlobalMarriageSyncEnabler_SA"])
+        elif result_tag == "heteromarriagemode":
+            push_sa(sim,MOD_SA_IDS["openMarriageSyncHeteroModePicker_SA"])
+        elif result_tag == "heterogenderpriority":
+            push_sa(sim,MOD_SA_IDS["openMarriageSyncGenderPriorityPicker_SA"])
+        elif result_tag == "samesexmarriagemode":
+            push_sa(sim,MOD_SA_IDS["openMarriageSyncSameSexModePicker_SA"])
+        elif result_tag == "goback":
+            push_sa(sim,MOD_SA_IDS["openGenerationNameSub_SA"])
+
+    show_item_picker_dialog(
+        sim_info=sim_info,
+        title_key=0x6F4AB9AE, # MCCC Sync Married Names Replacement
+        text_key=0x723AE008, # A replacement for MCCC's 'Sync Married Names' setting under MC Cleaner which will not impact name changes made by this mod.
+        rows=[
+            {
+                "name_key": 0x764803CB, # [MASTER] Enable/Disable MCCC Sync Married Name Replacement
+                "row_description_key": 0xC062B73D, # Enabling this setting will run the selected marriage naming mode on the spouses if neither are in a dynasty. Make sure to disable Sync Married Names under MC Cleaner if you use this. (DISABLED BY DEFAULT)
+                "tag": "mastermarriagesyncsetting",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x13fab148329e8988,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x1338A9F1, # Heterosexual Marriage Mode
+                "row_description_key": 0x9ED6B115, # The naming mode that will be used for heterosexual marriage surnames.
+                "tag": "heteromarriagemode",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x20266E83C9681851,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0xB352972B, # Heterosexual Prioritised Gender
+                "row_description_key": 0x595827B6, # The spouse gender which will be prioritised in name selection if Gender Priority mode is chosen.
+                "tag": "heterogenderpriority",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x3F4FB938F3131B8D,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0x06017274, # Same-sex Marriage Mode
+                "row_description_key": 0x6897F994, # The naming mode that will be used for same-sex marriage surnames.
+                "tag": "samesexmarriagemode",
+                "is_enable": True,
+                "icon": sims4.resources.get_resource_key(
+                    0x20266E83C9681851,
+                    0x2F7D0004
+                )
+            },
+            {
+                "name_key": 0xDDC3EC7E, # Go back
+                "tag": "goback",
+                "is_enable": True,
+                "icon": GO_BACK_ICON
+            }
         ],
         on_submit=on_submit
     )

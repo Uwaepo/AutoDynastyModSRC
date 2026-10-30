@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 import shutil
-from sims.sim_info_types import Age
+from sims.sim_info_types import Age, Gender
 from relationships.relationship_enums import RelationshipType
 
 from . import constants
@@ -33,6 +33,9 @@ class GlobalSettings:
         self.enforce_dynasty_name = False
 
         self.retain_courtesy_titles = False
+
+        self.enforce_generation_surnames = False
+        self.mccc_replacement_marriage_sync = False
 
         # Dynasty Roles
         self.heir_gender_priority = "none"
@@ -82,6 +85,12 @@ class GlobalSettings:
         self.daily_update_time = 7
         self.daily_update_days = [0,1,2,3,4,5,6]
         self.daily_ea_repair = False
+
+        # MCCC Replacement Marriage Sync
+        self.hetero_marriage_mode = "genderpriority"
+        self.hetero_marriage_gender_priority = int(Gender.MALE)
+        self.samesex_marriage_mode = "randomsurname"
+        self.restore_divorced_maiden_name = True
     
     @classmethod
     def migrate_old_config(cls):
@@ -157,6 +166,10 @@ class GlobalSettings:
         cls.enforce_dynasty_name = data.get("enforce_dynasty_name", False)
 
         cls.retain_courtesy_titles = data.get("retain_courtesy_titles", False)
+
+        cls.enforce_generation_surnames = data.get("enforce_generation_surnames", False)
+
+        cls.mccc_replacement_marriage_sync = data.get("mccc_replacement_marriage_sync", False)
         
         cls.heir_gender_priority = data.get("heir_gender_priority", "none")
         cls.familial_connections_become_heir = data.get("familial_connections_become_heir", ["children","spouse","siblings","parents"])
@@ -185,6 +198,11 @@ class GlobalSettings:
         cls.maximum_head_rel_new_rival = data.get("maximum_head_rel_new_rival", -50)
         cls.maximum_average_rel_new_rival = data.get("maximum_average_rel_new_rival", -20)
         cls.minimum_head_rel_remove_rival = data.get("minimum_head_rel_remove_rival", 10)
+
+        cls.hetero_marriage_mode = data.get("hetero_marriage_mode", "genderpriority")
+        cls.hetero_marriage_gender_priority = data.get("hetero_marriage_gender_priority", Gender.MALE)
+        cls.samesex_marriage_mode = data.get("samesex_marriage_mode", "randomsurname")
+        cls.restore_divorced_maiden_name = data.get("restore_divorced_maiden_name", True)
 
     @classmethod
     def load_json(cls,json_file):
@@ -219,6 +237,8 @@ class GlobalSettings:
             "automatic_remove_rivalries": str(self.automatic_remove_rivalries),
             "enforce_dynasty_name": str(self.enforce_dynasty_name),
             "retain_courtesy_titles": str(self.retain_courtesy_titles),
+            "enforce_generation_surnames": str(self.enforce_generation_surnames),
+            "mccc_replacement_marriage_sync": str(self.mccc_replacement_marriage_sync)
         }
 
         config["Dynasty Roles"] = {
@@ -273,6 +293,13 @@ class GlobalSettings:
             "daily_ea_repair": str(self.daily_ea_repair),
         }
 
+        config["Marriage Sync"] = {
+            "hetero_marriage_mode": self.hetero_marriage_mode,
+            "hetero_marriage_gender_priority": str(self.hetero_marriage_gender_priority),
+            "samesex_marriage_mode": self.samesex_marriage_mode,
+            "restore_divorced_maiden_name": str(self.restore_divorced_maiden_name),
+        }
+
         try:
             with open(path, "w") as file:
                 config.write(file)
@@ -313,6 +340,10 @@ class GlobalSettings:
 
             self.retain_courtesy_titles = config.getboolean("Enablers", "retain_courtesy_titles", fallback=False)
 
+            self.enforce_generation_surnames = config.getboolean("Enablers", "enforce_generation_surnames", fallback=False)
+
+            self.mccc_replacement_marriage_sync = config.getboolean("Enablers", "mccc_replacement_marriage_sync", fallback=False)
+
             self.heir_gender_priority = config.get("Dynasty Roles", "heir_gender_priority", fallback="none")
             self.familial_connections_become_heir = config.get("Dynasty Roles","familial_connections_become_heir",fallback="children,spouse,siblings,parents").split(",")
             self.heir_minimum_age = config.get("Dynasty Roles", "heir_minimum_age", fallback="BABY")
@@ -351,6 +382,11 @@ class GlobalSettings:
             self.daily_update_time = config.getint("Daily Updates", "daily_update_time", fallback=7)
             self.daily_update_days = [int(x) for x in config.get("Daily Updates", "daily_update_days", fallback="0,1,2,3,4,5,6").split(",") if x]
             self.daily_ea_repair = config.getboolean("Daily Updates", "daily_ea_repair", fallback=False)
+
+            self.hetero_marriage_mode = config.get("Marriage Sync", "hetero_marriage_mode", fallback="genderpriority")
+            self.hetero_marriage_gender_priority = config.getint("Marriage Sync", "hetero_marriage_gender_priority", fallback=int(Gender.MALE))
+            self.samesex_marriage_mode = config.get("Marriage Sync", "samesex_marriage_mode", fallback="randomsurname")
+            self.restore_divorced_maiden_name = config.getboolean("Marriage Sync", "restore_divorced_maiden_name", fallback=True)
 
             self.save()
             debug_log("Loaded config settings")
